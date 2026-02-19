@@ -31,11 +31,43 @@ h1 {
   margin-bottom: .25rem;
   letter-spacing: -.02em;
 }
-.subtitle {
-  font-size: .78rem;
-  color: #555;
+/* ── Laur rekomendacji ── */
+.laurel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
   margin-bottom: 1.8rem;
-  letter-spacing: .02em;
+  user-select: none;
+}
+.laurel-branch {
+  font-size: 1.6rem;
+  line-height: 1;
+  opacity: .55;
+  filter: grayscale(.3);
+}
+.laurel-branch.left { transform: scaleX(-1); }
+.laurel-content {
+  text-align: center;
+  max-width: 280px;
+  padding: 0 .3rem;
+}
+.laurel-quote {
+  font-size: .65rem;
+  font-style: italic;
+  color: #777;
+  line-height: 1.45;
+  letter-spacing: .01em;
+}
+.laurel-quote::before { content: '\201E'; }
+.laurel-quote::after  { content: '\201D'; }
+.laurel-author {
+  font-size: .58rem;
+  color: #555;
+  margin-top: .25rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 
 /* ── Zakładki trybów ── */
@@ -345,6 +377,9 @@ h1 {
 @media (max-width: 480px) {
   body { padding: 1.5rem .75rem 2rem; }
   h1 { font-size: 1.25rem; }
+  .laurel-branch { font-size: 1.3rem; }
+  .laurel-content { max-width: 220px; }
+  .laurel-quote { font-size: .6rem; }
   .tabs { border-radius: 10px; }
   .tab { font-size: .7rem; padding: .5rem .3rem; }
   .opt-row { flex-wrap: wrap; gap: .5rem; }
@@ -356,7 +391,14 @@ h1 {
 <body>
 
 <h1>Konwerter na WebP</h1>
-<p class="subtitle">Wszystko działa lokalnie w przeglądarce</p>
+<div class="laurel">
+  <span class="laurel-branch left">🌿</span>
+  <div class="laurel-content">
+    <div class="laurel-quote">dawno nic mnie tak nie ucieszyło w tej robocie jak to narzędzie XD</div>
+    <div class="laurel-author">Karolina Jankowska</div>
+  </div>
+  <span class="laurel-branch">🌿</span>
+</div>
 
 <div class="tabs">
   <button class="tab active" data-mode="convert" title="Prosta konwersja na WebP">
