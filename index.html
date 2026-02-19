@@ -419,19 +419,10 @@ h1 {
     </div>
   </div>
 
-  <!-- Dialog proporcji (tryb opisu) -->
-  <div id="aspect-dialog" class="dialog-box warn">
-    <p id="aspect-text"></p>
-    <div class="btns">
-      <button class="btn-primary" id="btn-uniform-yes">Tak, ujednolić proporcje</button>
-      <button class="btn-secondary" id="btn-uniform-no">Nie, zostawić oryginalne</button>
-    </div>
-  </div>
-
-  <!-- Dialog wymiarów (tryb produktowy) -->
-  <div id="product-dialog" class="dialog-box info">
-    <p id="product-dialog-text"></p>
-    <div class="dim-info" id="product-dim-tags"></div>
+  <!-- Dialog wymiarów (wspólny dla Opis na stronę i Zdjęcia produktowe) -->
+  <div id="dim-dialog" class="dialog-box info">
+    <p id="dim-dialog-text"></p>
+    <div class="dim-info" id="dim-dialog-tags"></div>
     <p style="margin-top:.5rem; color:#aaa;">Jak dopasować odstające zdjęcia?</p>
     <div class="fit-options" id="fit-options">
       <div class="fit-opt selected" data-fit="contain" title="Cały obrazek widoczny, dopełnienie tłem">Contain</div>
@@ -440,8 +431,8 @@ h1 {
     </div>
     <p class="fit-desc" id="fit-desc">Cały obrazek widoczny wewnątrz kadru. Puste miejsce wypełnione kolorem tła.</p>
     <div class="btns" style="margin-top:.6rem">
-      <button class="btn-green" id="btn-product-go">Dopasuj i konwertuj</button>
-      <button class="btn-secondary" id="btn-product-skip">Pomiń — konwertuj bez zmian</button>
+      <button class="btn-green" id="btn-dim-go">Dopasuj i konwertuj</button>
+      <button class="btn-secondary" id="btn-dim-skip">Pomiń — konwertuj bez zmian</button>
     </div>
   </div>
 
@@ -470,9 +461,7 @@ const thresholdSlider = $('threshold');
 const thresholdVal = $('threshold-val');
 const status = $('status');
 const preview = $('preview');
-const aspectDialog = $('aspect-dialog');
-const aspectText = $('aspect-text');
-const productDialog = $('product-dialog');
+const dimDialog = $('dim-dialog');
 const tabs = document.querySelectorAll('.tab');
 const modeOpts = document.querySelectorAll('.mode-opts');
 
@@ -540,8 +529,7 @@ fileInput.addEventListener('change', () => {
 function resetUI() {
   status.textContent = '';
   preview.innerHTML = '';
-  aspectDialog.style.display = 'none';
-  productDialog.style.display = 'none';
+  dimDialog.style.display = 'none';
 }
 
 /* ── Router trybów ── */
@@ -578,38 +566,58 @@ async function handleConvert(files) {
 
 /* ══════════════════════════════════════════════
    TRYB 2: Opis na stronę
+   — analiza dominujących wymiarów
+   — dopasowanie odstających (contain/cover/stretch)
+   — max szerokość + max KB z loop compression
    ══════════════════════════════════════════════ */
 async function handleDesc(files) {
   const loaded = [];
-  for (const f of files) {
-    const img = await loadImg(f);
-    loaded.push({ file: f, img, ratio: img.naturalWidth / img.naturalHeight });
+  for (let i = 0; i < files.length; i++) {
+    status.textContent = `Wczytuję ${i + 1}/${files.length}...`;
+    await tick();
+    const img = await loadImg(files[i]);
+    const w = img.naturalWidth, h = img.naturalHeight;
+    loaded.push({ file: files[i], img, w, h, ratio: w / h });
   }
-  if (loaded.length > 1) {
-    const pairs = findSimilarPairs(loaded);
-    if (pairs > 0) {
-      aspectText.textContent =
-        `Wykryto ${pairs} par zdjęć o zbliżonych, ale różnych proporcjach. ` +
-        `Ujednolicić je do wspólnego formatu (docięcie do średniej proporcji)?`;
-      aspectDialog.style.display = 'block';
-      await new Promise(resolve => {
-        $('btn-uniform-yes').onclick = () => { aspectDialog.style.display = 'none'; processDesc(loaded, true); resolve(); };
-        $('btn-uniform-no').onclick  = () => { aspectDialog.style.display = 'none'; processDesc(loaded, false); resolve(); };
-      });
-      return;
-    }
-  }
-  processDesc(loaded, false);
-}
 
-async function processDesc(loaded, uniform) {
   const maxW = parseInt($('max-width').value) || 1000;
   const maxKB = (parseInt($('max-kb').value) || 300) * 1024;
-  const avgRatio = loaded.reduce((a, c) => a + c.ratio, 0) / loaded.length;
   const quality = qualitySlider.value / 100;
+
+  /* Jedno zdjęcie — prosto konwertuj */
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, uniform, avgRatio);
+    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, null, null);
+    download(blob, swapExt(loaded[0].file.name));
+    showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
+    addToCounter(1);
+    status.textContent = 'Gotowe! Plik pobrany.';
+    return;
+  }
+
+  /* Wiele zdjęć — analizuj proporcje */
+  const analysis = analyzeDimensions(loaded.map(l => ({ w: l.w, h: l.h })));
+
+  if (analysis.outliers === 0) {
+    /* Wszystkie te same proporcje — konwertuj bez pytania */
+    await processDescBatch(loaded, maxW, maxKB, quality, null, null);
+    return;
+  }
+
+  /* Pokaż dialog */
+  const choice = await showDimDialog(analysis, loaded.length);
+
+  if (choice.fit) {
+    await processDescBatch(loaded, maxW, maxKB, quality, analysis.dominantRatio, choice.fit);
+  } else {
+    await processDescBatch(loaded, maxW, maxKB, quality, null, null);
+  }
+}
+
+async function processDescBatch(loaded, maxW, maxKB, quality, dominantRatio, fitMode) {
+  if (loaded.length === 1) {
+    status.textContent = 'Konwertuję...';
+    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, dominantRatio, fitMode);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter(1);
@@ -617,30 +625,55 @@ async function processDesc(loaded, uniform) {
     return;
   }
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
-    return descConvertOne(loaded[i], maxW, maxKB, quality, uniform, avgRatio);
+    return descConvertOne(loaded[i], maxW, maxKB, quality, dominantRatio, fitMode);
+  }, (file, i) => {
+    if (!dominantRatio || !fitMode) return null;
+    const qr = Math.round(loaded[i].ratio * 20) / 20;
+    const dr = Math.round(dominantRatio * 20) / 20;
+    return qr === dr ? null : fitMode;
   });
 }
 
-async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio) {
-  const { img, ratio } = item;
-  let targetW = Math.min(img.naturalWidth, maxW);
-  let targetH = targetW / ratio;
-  let drawW = targetW, drawH = targetH, ox = 0, oy = 0;
-  if (uniform && Math.abs(ratio - avgRatio) < 0.15) {
-    targetH = targetW / avgRatio;
-    const s = Math.max(targetW / img.naturalWidth, targetH / img.naturalHeight);
-    drawW = img.naturalWidth * s;
-    drawH = img.naturalHeight * s;
-    ox = (targetW - drawW) / 2;
-    oy = (targetH - drawH) / 2;
-  }
+async function descConvertOne(item, maxW, maxKB, startQuality, dominantRatio, fitMode) {
+  const { img, w, h, ratio } = item;
+  let targetW = Math.min(w, maxW);
+  let targetH = Math.round(targetW / ratio);
+
+  const needsFit = dominantRatio !== null && fitMode !== null &&
+    Math.round(ratio * 20) / 20 !== Math.round(dominantRatio * 20) / 20;
+
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(targetW);
-  canvas.height = Math.round(targetH);
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, ox, oy, drawW, drawH);
+
+  if (!needsFit) {
+    /* Prosta konwersja — zachowaj oryginalne proporcje */
+    canvas.width = targetW;
+    canvas.height = targetH;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+  } else {
+    /* Dopasuj do dominujących proporcji */
+    const domH = Math.round(targetW / dominantRatio);
+    canvas.width = targetW;
+    canvas.height = domH;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, targetW, domH);
+
+    if (fitMode === 'contain') {
+      const s = Math.min(targetW / w, domH / h);
+      const fw = w * s, fh = h * s;
+      ctx.drawImage(img, (targetW - fw) / 2, (domH - fh) / 2, fw, fh);
+    } else if (fitMode === 'cover') {
+      const s = Math.max(targetW / w, domH / h);
+      const fw = w * s, fh = h * s;
+      ctx.drawImage(img, (targetW - fw) / 2, (domH - fh) / 2, fw, fh);
+    } else if (fitMode === 'stretch') {
+      ctx.drawImage(img, 0, 0, targetW, domH);
+    }
+  }
+
+  /* Loop compression — zmniejszaj jakość dopóki nie zmieści się w maxKB */
   let q = startQuality;
   let blob = await canvasToBlob(canvas, q);
   while (blob.size > maxKB && q > 0.05) {
@@ -699,78 +732,23 @@ async function handleProduct(files) {
     return;
   }
 
-  /* Grupuj po proporcjach kadru */
-  const dimKey = (w, h) => {
-    const ratio = w / h;
-    const qr = Math.round(ratio * 20) / 20;
-    return qr.toFixed(2);
-  };
+  /* Analiza wymiarów po cropie */
+  const analysis = analyzeDimensions(items.map(it => ({ w: it.cropW, h: it.cropH })));
 
-  const groups = {};
-  for (const item of items) {
-    const key = dimKey(item.cropW, item.cropH);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(item);
-  }
-
-  /* Znajdź dominującą grupę (najwięcej zdjęć) */
-  let dominantKey = null;
-  let dominantCount = 0;
-  for (const [key, arr] of Object.entries(groups)) {
-    if (arr.length > dominantCount) {
-      dominantCount = arr.length;
-      dominantKey = key;
-    }
-  }
-
-  const dominantRatio = parseFloat(dominantKey);
-  const outliers = items.filter(it => dimKey(it.cropW, it.cropH) !== dominantKey);
-
-  /* Jeśli nie ma outlierów lub tylko 1 grupa — prosto konwertuj */
-  if (outliers.length === 0) {
+  if (analysis.outliers === 0) {
     await processProductBatch(items, null, null, targetPx, bgColor, quality);
     return;
   }
 
-  /* Pokaż dialog z analizą */
-  const dominantItems = groups[dominantKey];
-  const avgW = Math.round(dominantItems.reduce((a, i) => a + i.cropW, 0) / dominantItems.length);
-  const avgH = Math.round(dominantItems.reduce((a, i) => a + i.cropH, 0) / dominantItems.length);
+  /* Pokaż dialog */
+  const choice = await showDimDialog(analysis, items.length);
 
-  $('product-dialog-text').textContent =
-    `Wrzucono ${items.length} zdjęć. Dominujące proporcje (${dominantCount} szt.) to ok. ${avgW}×${avgH} px ` +
-    `(ratio ${dominantRatio.toFixed(2)}). ${outliers.length} zdjęć ma inne wymiary.`;
-
-  /* Tagi wymiarów */
-  const tagsEl = $('product-dim-tags');
-  tagsEl.innerHTML = '';
-  for (const [key, arr] of Object.entries(groups)) {
-    const tag = document.createElement('span');
-    tag.className = 'dim-tag' + (key === dominantKey ? ' dominant' : '');
-    const r = parseFloat(key);
-    const label = r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1/r).toFixed(2)}`;
-    tag.textContent = `${label} — ${arr.length} szt.` + (key === dominantKey ? ' ★' : '');
-    tagsEl.appendChild(tag);
+  if (choice.fit) {
+    await processProductBatch(items, analysis.dominantRatio, choice.fit, targetPx, bgColor, quality);
+  } else {
+    await processProductBatch(items, null, null, targetPx, bgColor, quality);
   }
 
-  /* Reset fit selection */
-  selectedFit = 'contain';
-  document.querySelectorAll('.fit-opt').forEach(o => o.classList.toggle('selected', o.dataset.fit === 'contain'));
-  $('fit-desc').textContent = fitDescs['contain'];
-
-  productDialog.style.display = 'block';
-  status.textContent = '';
-
-  await new Promise(resolve => {
-    $('btn-product-go').onclick = () => {
-      productDialog.style.display = 'none';
-      processProductBatch(items, dominantRatio, selectedFit, targetPx, bgColor, quality).then(resolve);
-    };
-    $('btn-product-skip').onclick = () => {
-      productDialog.style.display = 'none';
-      processProductBatch(items, null, null, targetPx, bgColor, quality).then(resolve);
-    };
-  });
   } catch (e) {
     console.error('handleProduct error:', e);
     status.textContent = 'Błąd: ' + e.message;
@@ -783,18 +761,10 @@ async function processProductBatch(items, dominantRatio, fitMode, targetPx, bgCo
     const item = items[i];
     return productConvertItem(item, dominantRatio, fitMode, targetPx, bgColor, quality);
   }, (file, i, blob) => {
-    /* Extra info w miniaturce */
-    const item = items[i];
-    const isDominant = dominantRatio === null || isMatchingRatio(item, dominantRatio);
-    return isDominant ? null : fitMode;
+    if (!dominantRatio || !fitMode) return null;
+    const r = items[i].cropW / items[i].cropH;
+    return ratioKey(r) === ratioKey(dominantRatio) ? null : fitMode;
   });
-}
-
-function isMatchingRatio(item, dominantRatio) {
-  const ratio = item.cropW / item.cropH;
-  const qr = Math.round(ratio * 20) / 20;
-  const dr = Math.round(dominantRatio * 20) / 20;
-  return qr === dr;
 }
 
 function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality) {
@@ -816,7 +786,8 @@ function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality
   const margin = Math.round(size * 0.004);
   const drawArea = size - margin * 2;
 
-  const needsFit = dominantRatio !== null && fitMode !== null && !isMatchingRatio(item, dominantRatio);
+  const itemRatio = cropW / cropH;
+  const needsFit = dominantRatio !== null && fitMode !== null && ratioKey(itemRatio) !== ratioKey(dominantRatio);
 
   if (!needsFit) {
     /* Standardowe contain w kwadracie */
@@ -952,6 +923,79 @@ async function getContentBounds(img, threshold) {
 }
 
 /* ══════════════════════════════════════════════
+   Wspólna analiza wymiarów + dialog
+   ══════════════════════════════════════════════ */
+/* Kwantyzuj ratio do 0.05 precyzji i zwróć klucz tekstowy */
+function ratioKey(r) { return (Math.round(r * 20) / 20).toFixed(2); }
+
+/* Analizuje listę {w, h} i zwraca grupy, dominantę, outlierów */
+function analyzeDimensions(dims) {
+  const groups = {};
+  for (const d of dims) {
+    const key = ratioKey(d.w / d.h);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(d);
+  }
+
+  let dominantKey = null, dominantCount = 0;
+  for (const [key, arr] of Object.entries(groups)) {
+    if (arr.length > dominantCount) {
+      dominantCount = arr.length;
+      dominantKey = key;
+    }
+  }
+
+  const dominantRatio = parseFloat(dominantKey);
+  const dominantItems = groups[dominantKey];
+  const avgW = Math.round(dominantItems.reduce((a, d) => a + d.w, 0) / dominantItems.length);
+  const avgH = Math.round(dominantItems.reduce((a, d) => a + d.h, 0) / dominantItems.length);
+  const outliers = dims.filter(d => ratioKey(d.w / d.h) !== dominantKey).length;
+
+  return { groups, dominantKey, dominantCount, dominantRatio, avgW, avgH, outliers };
+}
+
+/* Pokaż wspólny dialog wymiarów i czekaj na decyzję usera.
+   Zwraca { fit: 'contain'|'cover'|'stretch' } lub { fit: null } */
+function showDimDialog(analysis, totalCount) {
+  const { groups, dominantKey, dominantCount, dominantRatio, avgW, avgH, outliers } = analysis;
+
+  $('dim-dialog-text').textContent =
+    `Wrzucono ${totalCount} zdjęć. Dominujące proporcje (${dominantCount} szt.) to ok. ${avgW}×${avgH} px ` +
+    `(ratio ${dominantRatio.toFixed(2)}). ${outliers} zdjęć ma inne wymiary.`;
+
+  /* Tagi wymiarów */
+  const tagsEl = $('dim-dialog-tags');
+  tagsEl.innerHTML = '';
+  for (const [key, arr] of Object.entries(groups)) {
+    const tag = document.createElement('span');
+    tag.className = 'dim-tag' + (key === dominantKey ? ' dominant' : '');
+    const r = parseFloat(key);
+    const label = r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1 / r).toFixed(2)}`;
+    tag.textContent = `${label} — ${arr.length} szt.` + (key === dominantKey ? ' ★' : '');
+    tagsEl.appendChild(tag);
+  }
+
+  /* Reset fit selection */
+  selectedFit = 'contain';
+  document.querySelectorAll('.fit-opt').forEach(o => o.classList.toggle('selected', o.dataset.fit === 'contain'));
+  $('fit-desc').textContent = fitDescs['contain'];
+
+  dimDialog.style.display = 'block';
+  status.textContent = '';
+
+  return new Promise(resolve => {
+    $('btn-dim-go').onclick = () => {
+      dimDialog.style.display = 'none';
+      resolve({ fit: selectedFit });
+    };
+    $('btn-dim-skip').onclick = () => {
+      dimDialog.style.display = 'none';
+      resolve({ fit: null });
+    };
+  });
+}
+
+/* ══════════════════════════════════════════════
    Wspólne narzędzia
    ══════════════════════════════════════════════ */
 /* Zamiana rozszerzenia na .webp (obrazek.png → obrazek.webp) */
@@ -1045,15 +1089,6 @@ function showThumb(src, name, bytes, fitLabel) {
 }
 
 function esc(s) { const t = document.createElement('span'); t.textContent = s; return t.innerHTML; }
-
-function findSimilarPairs(loaded) {
-  let count = 0;
-  for (let i = 0; i < loaded.length; i++)
-    for (let j = i + 1; j < loaded.length; j++)
-      if (Math.abs(loaded[i].ratio - loaded[j].ratio) > 0 &&
-          Math.abs(loaded[i].ratio - loaded[j].ratio) < 0.15) count++;
-  return count;
-}
 </script>
 </body>
 </html>
