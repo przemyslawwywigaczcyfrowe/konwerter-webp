@@ -6,7 +6,7 @@
 <title>Konwerter na WebP</title>
 <!--
   ╔══════════════════════════════════════════════════════════════╗
-  ║  Konwerter na WebP v2.0                                      ║
+  ║  Konwerter na WebP v3.0                                      ║
   ║  Autor: Przemysław Wywigacz                                  ║
   ╚══════════════════════════════════════════════════════════════╝
 -->
@@ -111,25 +111,29 @@ h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
 }
 .opt-row select:focus { outline: 1px solid #4f8cff; border-color: #4f8cff; }
 
-/* Checkbox */
-.chk { display: flex; align-items: center; gap: .5rem; cursor: pointer; font-size: .8rem; color: #888; }
-.chk input { accent-color: #4f8cff; width: 15px; height: 15px; }
-
-/* ── Dialog proporcji ── */
-#aspect-dialog {
+/* ── Dialog (proporcje / wymiary) ── */
+.dialog-box {
   display: none;
   margin-top: 1rem;
-  background: rgba(255,193,7,.08);
-  border: 1px solid rgba(255,193,7,.25);
-  border-left: 4px solid #ffc107;
   border-radius: 8px;
   padding: 1rem;
   font-size: .82rem;
-  color: #ccc;
   line-height: 1.5;
 }
-#aspect-dialog .btns { display: flex; gap: .5rem; margin-top: .8rem; flex-wrap: wrap; }
-#aspect-dialog button {
+.dialog-box.warn {
+  background: rgba(255,193,7,.08);
+  border: 1px solid rgba(255,193,7,.25);
+  border-left: 4px solid #ffc107;
+  color: #ccc;
+}
+.dialog-box.info {
+  background: rgba(79,140,255,.06);
+  border: 1px solid rgba(79,140,255,.2);
+  border-left: 4px solid #4f8cff;
+  color: #ccc;
+}
+.dialog-box .btns { display: flex; gap: .5rem; margin-top: .8rem; flex-wrap: wrap; }
+.dialog-box button {
   padding: .45rem 1rem;
   border: none;
   border-radius: 6px;
@@ -138,10 +142,57 @@ h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
   font-weight: 600;
   transition: .15s;
 }
-.btn-yes { background: #4f8cff; color: #fff; }
-.btn-yes:hover { background: #3a7ae0; }
-.btn-no { background: #2a2a2a; color: #aaa; }
-.btn-no:hover { background: #333; }
+.btn-primary { background: #4f8cff; color: #fff; }
+.btn-primary:hover { background: #3a7ae0; }
+.btn-secondary { background: #2a2a2a; color: #aaa; }
+.btn-secondary:hover { background: #333; }
+.btn-green { background: #28a745; color: #fff; }
+.btn-green:hover { background: #218838; }
+
+.dialog-box .dim-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin: .5rem 0;
+}
+.dialog-box .dim-tag {
+  background: rgba(79,140,255,.12);
+  border: 1px solid rgba(79,140,255,.25);
+  padding: .2rem .6rem;
+  border-radius: 5px;
+  font-size: .75rem;
+  font-family: monospace;
+  color: #8bb8ff;
+}
+.dialog-box .dim-tag.dominant {
+  background: rgba(40,167,69,.15);
+  border-color: rgba(40,167,69,.4);
+  color: #5fd67b;
+}
+.dialog-box .fit-options {
+  display: flex;
+  gap: .4rem;
+  margin-top: .6rem;
+  flex-wrap: wrap;
+}
+.dialog-box .fit-opt {
+  padding: .4rem .8rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #aaa;
+  cursor: pointer;
+  font-size: .75rem;
+  transition: .15s;
+}
+.dialog-box .fit-opt:hover { border-color: #4f8cff; color: #ddd; }
+.dialog-box .fit-opt.selected { border-color: #4f8cff; background: rgba(79,140,255,.15); color: #fff; }
+.dialog-box .fit-desc {
+  font-size: .72rem;
+  color: #777;
+  margin-top: .4rem;
+  min-height: 2em;
+}
 
 /* ── Status + podgląd ── */
 #status {
@@ -177,6 +228,16 @@ h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
 .thumb .info { line-height: 1.4; }
 .thumb .name { color: #aaa; word-break: break-all; }
 .thumb .size { color: #4f8cff; }
+.thumb .dims { color: #666; font-size: .65rem; }
+.thumb .badge {
+  display: inline-block;
+  font-size: .6rem;
+  padding: .1rem .35rem;
+  border-radius: 3px;
+  margin-top: 2px;
+}
+.thumb .badge.ok { background: rgba(40,167,69,.15); color: #5fd67b; }
+.thumb .badge.fit { background: rgba(79,140,255,.12); color: #8bb8ff; }
 
 #file-input { display: none; }
 
@@ -253,11 +314,29 @@ h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
     </div>
   </div>
 
-  <div id="aspect-dialog">
+  <!-- Dialog proporcji (tryb opisu) -->
+  <div id="aspect-dialog" class="dialog-box warn">
     <p id="aspect-text"></p>
     <div class="btns">
-      <button class="btn-yes" id="btn-uniform-yes">Tak, ujednolić proporcje</button>
-      <button class="btn-no" id="btn-uniform-no">Nie, zostawić oryginalne</button>
+      <button class="btn-primary" id="btn-uniform-yes">Tak, ujednolić proporcje</button>
+      <button class="btn-secondary" id="btn-uniform-no">Nie, zostawić oryginalne</button>
+    </div>
+  </div>
+
+  <!-- Dialog wymiarów (tryb produktowy) -->
+  <div id="product-dialog" class="dialog-box info">
+    <p id="product-dialog-text"></p>
+    <div class="dim-info" id="product-dim-tags"></div>
+    <p style="margin-top:.5rem; color:#aaa;">Jak dopasować odstające zdjęcia?</p>
+    <div class="fit-options" id="fit-options">
+      <div class="fit-opt selected" data-fit="contain" title="Cały obrazek widoczny, dopełnienie tłem">Contain</div>
+      <div class="fit-opt" data-fit="cover" title="Wypełnienie kadru, przycięcie nadmiaru">Cover</div>
+      <div class="fit-opt" data-fit="stretch" title="Rozciągnięcie do wymiarów (zniekształca)">Stretch</div>
+    </div>
+    <p class="fit-desc" id="fit-desc">Cały obrazek widoczny wewnątrz kadru. Puste miejsce wypełnione kolorem tła.</p>
+    <div class="btns" style="margin-top:.6rem">
+      <button class="btn-green" id="btn-product-go">Dopasuj i konwertuj</button>
+      <button class="btn-secondary" id="btn-product-skip">Pomiń — konwertuj bez zmian</button>
     </div>
   </div>
 
@@ -280,10 +359,12 @@ const status = $('status');
 const preview = $('preview');
 const aspectDialog = $('aspect-dialog');
 const aspectText = $('aspect-text');
+const productDialog = $('product-dialog');
 const tabs = document.querySelectorAll('.tab');
 const modeOpts = document.querySelectorAll('.mode-opts');
 
 let currentMode = 'convert';
+let selectedFit = 'contain';
 
 /* ── Zakładki ── */
 tabs.forEach(tab => {
@@ -300,6 +381,21 @@ tabs.forEach(tab => {
 qualitySlider.addEventListener('input', () => qualityVal.textContent = qualitySlider.value + '%');
 thresholdSlider.addEventListener('input', () => thresholdVal.textContent = thresholdSlider.value);
 
+/* ── Fit options ── */
+const fitDescs = {
+  contain: 'Cały obrazek widoczny wewnątrz kadru. Puste miejsce wypełnione kolorem tła.',
+  cover:   'Obrazek wypełnia cały kadr. Nadmiar jest przycinany od krawędzi.',
+  stretch: 'Obrazek rozciągnięty do dokładnych wymiarów. Może zniekształcić proporcje.',
+};
+document.querySelectorAll('.fit-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('.fit-opt').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    selectedFit = opt.dataset.fit;
+    $('fit-desc').textContent = fitDescs[selectedFit];
+  });
+});
+
 /* ── Drag & Drop ── */
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -311,6 +407,7 @@ function resetUI() {
   status.textContent = '';
   preview.innerHTML = '';
   aspectDialog.style.display = 'none';
+  productDialog.style.display = 'none';
 }
 
 /* ── Router trybów ── */
@@ -345,7 +442,7 @@ async function handleConvert(files) {
 }
 
 /* ══════════════════════════════════════════════
-   TRYB 2: Opis na stronę (max szer, max KB, proporcje)
+   TRYB 2: Opis na stronę
    ══════════════════════════════════════════════ */
 async function handleDesc(files) {
   const loaded = [];
@@ -353,8 +450,6 @@ async function handleDesc(files) {
     const img = await loadImg(f);
     loaded.push({ file: f, img, ratio: img.naturalWidth / img.naturalHeight });
   }
-
-  /* Analiza proporcji — szukamy par, które różnią się o <15% */
   if (loaded.length > 1) {
     const pairs = findSimilarPairs(loaded);
     if (pairs > 0) {
@@ -377,7 +472,6 @@ async function processDesc(loaded, uniform) {
   const maxKB = (parseInt($('max-kb').value) || 300) * 1024;
   const avgRatio = loaded.reduce((a, c) => a + c.ratio, 0) / loaded.length;
   const quality = qualitySlider.value / 100;
-
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
     const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, uniform, avgRatio);
@@ -386,7 +480,6 @@ async function processDesc(loaded, uniform) {
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
-
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
     return descConvertOne(loaded[i], maxW, maxKB, quality, uniform, avgRatio);
   });
@@ -397,7 +490,6 @@ async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio
   let targetW = Math.min(img.naturalWidth, maxW);
   let targetH = targetW / ratio;
   let drawW = targetW, drawH = targetH, ox = 0, oy = 0;
-
   if (uniform && Math.abs(ratio - avgRatio) < 0.15) {
     targetH = targetW / avgRatio;
     const s = Math.max(targetW / img.naturalWidth, targetH / img.naturalHeight);
@@ -406,7 +498,6 @@ async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio
     ox = (targetW - drawW) / 2;
     oy = (targetH - drawH) / 2;
   }
-
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(targetW);
   canvas.height = Math.round(targetH);
@@ -414,8 +505,6 @@ async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, ox, oy, drawW, drawH);
-
-  /* Kompresja pętlowa — obniżaj jakość aż zmieści się w max KB */
   let q = startQuality;
   let blob = await canvasToBlob(canvas, q);
   while (blob.size > maxKB && q > 0.05) {
@@ -426,31 +515,215 @@ async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio
 }
 
 /* ══════════════════════════════════════════════
-   TRYB 3: Zdjęcia produktowe (auto-crop białego tła)
+   TRYB 3: Zdjęcia produktowe
+   — auto-crop białego tła
+   — wykrywanie dominujących wymiarów
+   — dopasowanie odstających (contain/cover/stretch)
    ══════════════════════════════════════════════ */
 async function handleProduct(files) {
-  const targetPx = parseInt($('target-size').value) || 1300;
-  const bgColor = $('bg-color').value;
   const thresh = parseInt(thresholdSlider.value);
   const quality = qualitySlider.value / 100;
+  const bgColor = $('bg-color').value;
+  const targetPx = parseInt($('target-size').value) || 1300;
 
+  /* Jedno zdjęcie — bez analizy, po prostu crop+kwadrat */
   if (files.length === 1) {
     status.textContent = 'Konwertuję...';
     const img = await loadImg(files[0]);
-    const blob = await productConvert(img, targetPx, bgColor, thresh, quality);
+    const blob = await productConvertSingle(img, targetPx, bgColor, thresh, quality);
     download(blob, files[0].name + '.webp');
     showThumb(URL.createObjectURL(blob), files[0].name + '.webp', blob.size);
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
 
-  await zipConvert(files, async (file) => {
-    const img = await loadImg(file);
-    return productConvert(img, targetPx, bgColor, thresh, quality);
+  /* Wiele zdjęć — załaduj, autocrop i przeanalizuj wymiary po cropie */
+  status.textContent = 'Analizuję wymiary...';
+  const items = [];
+  for (const f of files) {
+    const img = await loadImg(f);
+    const bounds = getContentBounds(img, thresh);
+    const cropW = bounds.right - bounds.left;
+    const cropH = bounds.bottom - bounds.top;
+    items.push({ file: f, img, bounds, cropW, cropH });
+  }
+
+  /* Grupuj po proporcjach kadru (zaokrąglone do 50px) */
+  const dimKey = (w, h) => {
+    const ratio = w / h;
+    /* Kwantyzuj ratio do 0.05 */
+    const qr = Math.round(ratio * 20) / 20;
+    return qr.toFixed(2);
+  };
+
+  const groups = {};
+  for (const item of items) {
+    const key = dimKey(item.cropW, item.cropH);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  }
+
+  /* Znajdź dominującą grupę (najwięcej zdjęć) */
+  let dominantKey = null;
+  let dominantCount = 0;
+  for (const [key, arr] of Object.entries(groups)) {
+    if (arr.length > dominantCount) {
+      dominantCount = arr.length;
+      dominantKey = key;
+    }
+  }
+
+  const dominantRatio = parseFloat(dominantKey);
+  const outliers = items.filter(it => dimKey(it.cropW, it.cropH) !== dominantKey);
+
+  /* Jeśli nie ma outlierów — prosto konwertuj */
+  if (outliers.length === 0) {
+    status.textContent = '';
+    await processProductBatch(items, null, null, targetPx, bgColor, quality);
+    return;
+  }
+
+  /* Pokaż dialog z analizą */
+  const dominantItems = groups[dominantKey];
+  const avgW = Math.round(dominantItems.reduce((a, i) => a + i.cropW, 0) / dominantItems.length);
+  const avgH = Math.round(dominantItems.reduce((a, i) => a + i.cropH, 0) / dominantItems.length);
+
+  $('product-dialog-text').textContent =
+    `Wrzucono ${items.length} zdjęć. Dominujące proporcje (${dominantCount} szt.) to ok. ${avgW}×${avgH} px ` +
+    `(ratio ${dominantRatio.toFixed(2)}). ${outliers.length} zdjęć ma inne wymiary.`;
+
+  /* Tagi wymiarów */
+  const tagsEl = $('product-dim-tags');
+  tagsEl.innerHTML = '';
+  for (const [key, arr] of Object.entries(groups)) {
+    const tag = document.createElement('span');
+    tag.className = 'dim-tag' + (key === dominantKey ? ' dominant' : '');
+    const r = parseFloat(key);
+    const label = r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1/r).toFixed(2)}`;
+    tag.textContent = `${label} — ${arr.length} szt.` + (key === dominantKey ? ' ★' : '');
+    tagsEl.appendChild(tag);
+  }
+
+  /* Reset fit selection */
+  selectedFit = 'contain';
+  document.querySelectorAll('.fit-opt').forEach(o => o.classList.toggle('selected', o.dataset.fit === 'contain'));
+  $('fit-desc').textContent = fitDescs['contain'];
+
+  productDialog.style.display = '';
+  status.textContent = '';
+
+  await new Promise(resolve => {
+    $('btn-product-go').onclick = () => {
+      productDialog.style.display = 'none';
+      processProductBatch(items, dominantRatio, selectedFit, targetPx, bgColor, quality).then(resolve);
+    };
+    $('btn-product-skip').onclick = () => {
+      productDialog.style.display = 'none';
+      processProductBatch(items, null, null, targetPx, bgColor, quality).then(resolve);
+    };
   });
 }
 
-function productConvert(img, size, bgColor, threshold, quality) {
+async function processProductBatch(items, dominantRatio, fitMode, targetPx, bgColor, quality) {
+  const files = items.map(it => it.file);
+  await zipConvert(files, async (file, i) => {
+    const item = items[i];
+    return productConvertItem(item, dominantRatio, fitMode, targetPx, bgColor, quality);
+  }, (file, i, blob) => {
+    /* Extra info w miniaturce */
+    const item = items[i];
+    const isDominant = dominantRatio === null || isMatchingRatio(item, dominantRatio);
+    return isDominant ? null : fitMode;
+  });
+}
+
+function isMatchingRatio(item, dominantRatio) {
+  const ratio = item.cropW / item.cropH;
+  const qr = Math.round(ratio * 20) / 20;
+  const dr = Math.round(dominantRatio * 20) / 20;
+  return qr === dr;
+}
+
+function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality) {
+  const { img, bounds, cropW, cropH } = item;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  /* Tło */
+  if (bgColor === 'transparent') {
+    ctx.clearRect(0, 0, size, size);
+  } else {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  /* Ustal docelowy kadr wewnątrz kwadratu */
+  const margin = Math.round(size * 0.004);
+  const drawArea = size - margin * 2;
+
+  const needsFit = dominantRatio !== null && fitMode !== null && !isMatchingRatio(item, dominantRatio);
+
+  if (!needsFit) {
+    /* Standardowe contain w kwadracie */
+    const scale = Math.min(drawArea / cropW, drawArea / cropH);
+    const fw = cropW * scale;
+    const fh = cropH * scale;
+    const px = (size - fw) / 2;
+    const py = (size - fh) / 2;
+    ctx.drawImage(img, bounds.left, bounds.top, cropW, cropH, px, py, fw, fh);
+  } else {
+    /* Oblicz docelowe proporcje kadru na podstawie dominantRatio */
+    let frameW, frameH;
+    if (dominantRatio >= 1) {
+      frameW = drawArea;
+      frameH = drawArea / dominantRatio;
+    } else {
+      frameH = drawArea;
+      frameW = drawArea * dominantRatio;
+    }
+
+    /* Dodatkowo zmieść frameW/frameH w drawArea */
+    const frameScale = Math.min(drawArea / frameW, drawArea / frameH);
+    frameW *= frameScale;
+    frameH *= frameScale;
+
+    const frameX = (size - frameW) / 2;
+    const frameY = (size - frameH) / 2;
+
+    if (fitMode === 'contain') {
+      /* Contain: cały crop widoczny wewnątrz frame */
+      const s = Math.min(frameW / cropW, frameH / cropH);
+      const fw = cropW * s;
+      const fh = cropH * s;
+      const px = frameX + (frameW - fw) / 2;
+      const py = frameY + (frameH - fh) / 2;
+      ctx.drawImage(img, bounds.left, bounds.top, cropW, cropH, px, py, fw, fh);
+    } else if (fitMode === 'cover') {
+      /* Cover: wypełnij frame, przytnij nadmiar */
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(frameX, frameY, frameW, frameH);
+      ctx.clip();
+      const s = Math.max(frameW / cropW, frameH / cropH);
+      const fw = cropW * s;
+      const fh = cropH * s;
+      const px = frameX + (frameW - fw) / 2;
+      const py = frameY + (frameH - fh) / 2;
+      ctx.drawImage(img, bounds.left, bounds.top, cropW, cropH, px, py, fw, fh);
+      ctx.restore();
+    } else if (fitMode === 'stretch') {
+      /* Stretch: rozciągnij do frame */
+      ctx.drawImage(img, bounds.left, bounds.top, cropW, cropH, frameX, frameY, frameW, frameH);
+    }
+  }
+
+  return canvasToBlob(canvas, quality);
+}
+
+/* Stary single (1 zdjęcie) — prosty contain w kwadracie */
+function productConvertSingle(img, size, bgColor, threshold, quality) {
   const bounds = getContentBounds(img, threshold);
   const cropW = bounds.right - bounds.left;
   const cropH = bounds.bottom - bounds.top;
@@ -466,7 +739,6 @@ function productConvert(img, size, bgColor, threshold, quality) {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-
   if (bgColor === 'transparent') {
     ctx.clearRect(0, 0, size, size);
   } else {
@@ -534,7 +806,7 @@ function toWebPBlob(img, quality) {
   return canvasToBlob(c, quality);
 }
 
-async function zipConvert(files, convertFn) {
+async function zipConvert(files, convertFn, extraInfoFn) {
   const zip = new JSZip();
   let done = 0, errors = 0;
   status.textContent = `Konwertuję 0/${files.length}...`;
@@ -543,7 +815,8 @@ async function zipConvert(files, convertFn) {
       const blob = await convertFn(files[i], i);
       const name = files[i].name + '.webp';
       zip.file(name, blob);
-      showThumb(URL.createObjectURL(blob), name, blob.size);
+      const extra = extraInfoFn ? extraInfoFn(files[i], i, blob) : null;
+      showThumb(URL.createObjectURL(blob), name, blob.size, extra);
     } catch { errors++; }
     done++;
     status.textContent = `Konwertuję ${done}/${files.length}...`;
@@ -564,11 +837,15 @@ function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function showThumb(src, name, bytes) {
+function showThumb(src, name, bytes, fitLabel) {
   const d = document.createElement('div');
   d.className = 'thumb';
   const kb = (bytes / 1024).toFixed(0);
-  d.innerHTML = `<img src="${src}"><div class="info"><div class="name">${esc(name)}</div><div class="size">${kb} KB</div></div>`;
+  let badge = '';
+  if (fitLabel) {
+    badge = `<span class="badge fit">${esc(fitLabel)}</span>`;
+  }
+  d.innerHTML = `<img src="${src}"><div class="info"><div class="name">${esc(name)}</div><div class="size">${kb} KB</div>${badge}</div>`;
   preview.appendChild(d);
 }
 
