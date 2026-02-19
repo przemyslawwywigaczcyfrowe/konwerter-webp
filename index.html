@@ -423,7 +423,7 @@ h1 {
   <div id="dim-dialog" class="dialog-box info">
     <p id="dim-dialog-text"></p>
     <div class="dim-info" id="dim-dialog-tags"></div>
-    <p style="margin-top:.5rem; color:#aaa;">Jak dopasować odstające zdjęcia?</p>
+    <p id="dim-dialog-question" style="margin-top:.5rem; color:#aaa;">Jak dopasować odstające zdjęcia?</p>
     <div class="fit-options" id="fit-options">
       <div class="fit-opt selected" data-fit="contain" title="Cały obrazek widoczny, dopełnienie tłem">Contain</div>
       <div class="fit-opt" data-fit="cover" title="Wypełnienie kadru, przycięcie nadmiaru">Cover</div>
@@ -600,24 +600,20 @@ async function handleDesc(files) {
 
   if (analysis.outliers === 0) {
     /* Wszystkie te same proporcje — konwertuj bez pytania */
-    await processDescBatch(loaded, maxW, maxKB, quality, null, null);
+    await processDescBatch(loaded, maxW, maxKB, quality, null);
     return;
   }
 
-  /* Pokaż dialog */
-  const choice = await showDimDialog(analysis, loaded.length);
+  /* Pokaż dialog z pytaniem o docięcie */
+  const shouldCrop = await showDescCropDialog(analysis, loaded.length);
 
-  if (choice.fit) {
-    await processDescBatch(loaded, maxW, maxKB, quality, analysis.dominantRatio, choice.fit);
-  } else {
-    await processDescBatch(loaded, maxW, maxKB, quality, null, null);
-  }
+  await processDescBatch(loaded, maxW, maxKB, quality, shouldCrop ? analysis.dominantRatio : null);
 }
 
-async function processDescBatch(loaded, maxW, maxKB, quality, dominantRatio, fitMode) {
+async function processDescBatch(loaded, maxW, maxKB, quality, dominantRatio) {
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, dominantRatio, fitMode);
+    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, dominantRatio);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter(1);
@@ -625,52 +621,41 @@ async function processDescBatch(loaded, maxW, maxKB, quality, dominantRatio, fit
     return;
   }
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
-    return descConvertOne(loaded[i], maxW, maxKB, quality, dominantRatio, fitMode);
+    return descConvertOne(loaded[i], maxW, maxKB, quality, dominantRatio);
   }, (file, i) => {
-    if (!dominantRatio || !fitMode) return null;
-    const qr = Math.round(loaded[i].ratio * 20) / 20;
-    const dr = Math.round(dominantRatio * 20) / 20;
-    return qr === dr ? null : fitMode;
+    if (!dominantRatio) return null;
+    return ratioKey(loaded[i].ratio) === ratioKey(dominantRatio) ? null : 'docięte';
   });
 }
 
-async function descConvertOne(item, maxW, maxKB, startQuality, dominantRatio, fitMode) {
+async function descConvertOne(item, maxW, maxKB, startQuality, dominantRatio) {
   const { img, w, h, ratio } = item;
   let targetW = Math.min(w, maxW);
   let targetH = Math.round(targetW / ratio);
 
-  const needsFit = dominantRatio !== null && fitMode !== null &&
-    Math.round(ratio * 20) / 20 !== Math.round(dominantRatio * 20) / 20;
+  const needsCrop = dominantRatio !== null &&
+    ratioKey(ratio) !== ratioKey(dominantRatio);
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
-  if (!needsFit) {
+  if (!needsCrop) {
     /* Prosta konwersja — zachowaj oryginalne proporcje */
     canvas.width = targetW;
     canvas.height = targetH;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, targetW, targetH);
     ctx.drawImage(img, 0, 0, targetW, targetH);
   } else {
-    /* Dopasuj do dominujących proporcji */
+    /* Dociąć do dominujących proporcji (center crop) */
     const domH = Math.round(targetW / dominantRatio);
     canvas.width = targetW;
     canvas.height = domH;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, targetW, domH);
 
-    if (fitMode === 'contain') {
-      const s = Math.min(targetW / w, domH / h);
-      const fw = w * s, fh = h * s;
-      ctx.drawImage(img, (targetW - fw) / 2, (domH - fh) / 2, fw, fh);
-    } else if (fitMode === 'cover') {
-      const s = Math.max(targetW / w, domH / h);
-      const fw = w * s, fh = h * s;
-      ctx.drawImage(img, (targetW - fw) / 2, (domH - fh) / 2, fw, fh);
-    } else if (fitMode === 'stretch') {
-      ctx.drawImage(img, 0, 0, targetW, domH);
-    }
+    /* Skaluj tak, by wypełnić cały kadr (cover), potem docinaj od środka */
+    const s = Math.max(targetW / w, domH / h);
+    const sw = w * s, sh = h * s;
+    const ox = (targetW - sw) / 2;
+    const oy = (domH - sh) / 2;
+    ctx.drawImage(img, ox, oy, sw, sh);
   }
 
   /* Loop compression — zmniejszaj jakość dopóki nie zmieści się w maxKB */
@@ -952,6 +937,60 @@ function analyzeDimensions(dims) {
   const outliers = dims.filter(d => ratioKey(d.w / d.h) !== dominantKey).length;
 
   return { groups, dominantKey, dominantCount, dominantRatio, avgW, avgH, outliers };
+}
+
+/* Dialog dla trybu Opis na stronę — pytanie o docięcie.
+   Zwraca true (dociąć) lub false (zostawić). */
+function showDescCropDialog(analysis, totalCount) {
+  const { groups, dominantKey, dominantCount, dominantRatio, avgW, avgH, outliers } = analysis;
+
+  $('dim-dialog-text').textContent =
+    `Wrzucono ${totalCount} zdjęć. Dominujące proporcje (${dominantCount} szt.) to ok. ${avgW}×${avgH} px ` +
+    `(ratio ${dominantRatio.toFixed(2)}). ${outliers} zdjęć ma inne wymiary.`;
+
+  /* Tagi wymiarów */
+  const tagsEl = $('dim-dialog-tags');
+  tagsEl.innerHTML = '';
+  for (const [key, arr] of Object.entries(groups)) {
+    const tag = document.createElement('span');
+    tag.className = 'dim-tag' + (key === dominantKey ? ' dominant' : '');
+    const r = parseFloat(key);
+    const label = r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1 / r).toFixed(2)}`;
+    tag.textContent = `${label} — ${arr.length} szt.` + (key === dominantKey ? ' ★' : '');
+    tagsEl.appendChild(tag);
+  }
+
+  /* Ukryj opcje fit — w trybie opisu zawsze docinamy (cover/crop) */
+  $('fit-options').style.display = 'none';
+  $('fit-desc').style.display = 'none';
+  $('dim-dialog-question').textContent = 'Dociąć odstające zdjęcia do dominujących proporcji?';
+  $('btn-dim-go').textContent = 'Tak, dociąć i konwertuj';
+  $('btn-dim-skip').textContent = 'Nie, zostawić oryginalne';
+
+  dimDialog.style.display = 'block';
+  status.textContent = '';
+
+  return new Promise(resolve => {
+    $('btn-dim-go').onclick = () => {
+      dimDialog.style.display = 'none';
+      restoreDimDialog();
+      resolve(true);
+    };
+    $('btn-dim-skip').onclick = () => {
+      dimDialog.style.display = 'none';
+      restoreDimDialog();
+      resolve(false);
+    };
+  });
+}
+
+/* Przywróć domyślny wygląd dialogu (po trybie opisu) */
+function restoreDimDialog() {
+  $('fit-options').style.display = '';
+  $('fit-desc').style.display = '';
+  $('dim-dialog-question').textContent = 'Jak dopasować odstające zdjęcia?';
+  $('btn-dim-go').textContent = 'Dopasuj i konwertuj';
+  $('btn-dim-skip').textContent = 'Pomiń — konwertuj bez zmian';
 }
 
 /* Pokaż wspólny dialog wymiarów i czekaj na decyzję usera.
