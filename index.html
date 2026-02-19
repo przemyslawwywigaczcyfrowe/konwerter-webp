@@ -460,7 +460,7 @@ async function handleDesc(files) {
       aspectText.textContent =
         `Wykryto ${pairs} par zdjęć o zbliżonych, ale różnych proporcjach. ` +
         `Ujednolicić je do wspólnego formatu (docięcie do średniej proporcji)?`;
-      aspectDialog.style.display = '';
+      aspectDialog.style.display = 'block';
       await new Promise(resolve => {
         $('btn-uniform-yes').onclick = () => { aspectDialog.style.display = 'none'; processDesc(loaded, true); resolve(); };
         $('btn-uniform-no').onclick  = () => { aspectDialog.style.display = 'none'; processDesc(loaded, false); resolve(); };
@@ -625,7 +625,7 @@ async function handleProduct(files) {
   document.querySelectorAll('.fit-opt').forEach(o => o.classList.toggle('selected', o.dataset.fit === 'contain'));
   $('fit-desc').textContent = fitDescs['contain'];
 
-  productDialog.style.display = '';
+  productDialog.style.display = 'block';
   status.textContent = '';
 
   await new Promise(resolve => {
