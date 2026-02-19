@@ -307,6 +307,40 @@ h1 {
 
 #file-input { display: none; }
 
+/* ── Licznik ── */
+.counter {
+  margin-top: auto;
+  padding-top: 3rem;
+  text-align: center;
+  font-size: .7rem;
+  color: #333;
+  letter-spacing: .02em;
+  user-select: none;
+}
+.counter-number {
+  display: inline-block;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: .85rem;
+  font-weight: 700;
+  color: #4f8cff;
+  background: rgba(79,140,255,.06);
+  border: 1px solid rgba(79,140,255,.12);
+  padding: .2rem .7rem;
+  border-radius: 6px;
+  margin: 0 .15rem;
+  min-width: 2.5rem;
+  letter-spacing: .05em;
+  transition: transform .3s ease, color .3s ease;
+}
+.counter-number.bump {
+  transform: scale(1.2);
+  color: #5fd67b;
+}
+.counter-label {
+  color: #444;
+  margin-top: .3rem;
+}
+
 /* ── Responsywność ── */
 @media (max-width: 480px) {
   body { padding: 1.5rem .75rem 2rem; }
@@ -417,6 +451,14 @@ h1 {
 
 <input type="file" id="file-input" accept="image/*" multiple>
 
+<div class="counter">
+  <div>🖼️ Przetworzonych obrazków:</div>
+  <div style="margin-top:.4rem">
+    <span class="counter-number" id="counter-num">0</span>
+  </div>
+  <div class="counter-label">dzięki temu narzędziu</div>
+</div>
+
 <script>
 /* ── Elementy ── */
 const $ = id => document.getElementById(id);
@@ -436,6 +478,23 @@ const modeOpts = document.querySelectorAll('.mode-opts');
 
 let currentMode = 'convert';
 let selectedFit = 'contain';
+
+/* ── Licznik przetworzonych obrazków ── */
+const COUNTER_KEY = 'webp-converter-count';
+const counterEl = $('counter-num');
+
+function getCount() {
+  return parseInt(localStorage.getItem(COUNTER_KEY) || '0', 10);
+}
+function addToCounter(n) {
+  const total = getCount() + n;
+  localStorage.setItem(COUNTER_KEY, total);
+  counterEl.textContent = total.toLocaleString('pl-PL');
+  counterEl.classList.add('bump');
+  setTimeout(() => counterEl.classList.remove('bump'), 400);
+}
+/* Inicjalizacja */
+counterEl.textContent = getCount().toLocaleString('pl-PL');
 
 /* ── Zakładki ── */
 tabs.forEach(tab => {
@@ -506,6 +565,7 @@ async function handleConvert(files) {
       const blob = await toWebPBlob(await loadImg(files[0]), quality);
       download(blob, swapExt(files[0].name));
       showThumb(URL.createObjectURL(blob), swapExt(files[0].name), blob.size);
+      addToCounter(1);
       status.textContent = 'Gotowe! Plik pobrany.';
     } catch (e) { status.textContent = e.message; }
     return;
@@ -552,6 +612,7 @@ async function processDesc(loaded, uniform) {
     const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, uniform, avgRatio);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
+    addToCounter(1);
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
@@ -609,6 +670,7 @@ async function handleProduct(files) {
     const blob = await productConvertSingle(img, targetPx, bgColor, thresh, quality);
     download(blob, swapExt(files[0].name));
     showThumb(URL.createObjectURL(blob), swapExt(files[0].name), blob.size);
+    addToCounter(1);
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
@@ -949,6 +1011,7 @@ async function zipConvert(files, convertFn, extraInfoFn) {
       zip.file(name, blob);
       const extra = extraInfoFn ? extraInfoFn(files[i], i, blob) : null;
       showThumb(URL.createObjectURL(blob), name, blob.size, extra);
+      addToCounter(1);
     } catch { errors++; }
     done++;
     status.textContent = `Konwertuję ${done}/${files.length}...`;
