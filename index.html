@@ -445,9 +445,9 @@ h1 {
 <div class="counter">
   <div>🖼️ Przetworzonych obrazków:</div>
   <div style="margin-top:.4rem">
-    <span class="counter-number" id="counter-num">0</span>
+    <span class="counter-number" id="counter-num">–</span>
   </div>
-  <div class="counter-label">dzięki temu narzędziu</div>
+  <div class="counter-label" id="counter-time"></div>
 </div>
 
 <script>
@@ -468,14 +468,31 @@ const modeOpts = document.querySelectorAll('.mode-opts');
 let currentMode = 'convert';
 let selectedFit = 'contain';
 
-/* ── Globalny licznik przetworzonych obrazków (CounterAPI) ── */
-const COUNTER_NS = 'konwerter-webp-cyfrowe';
-const COUNTER_NAME = 'images-converted';
-const COUNTER_API = `https://api.counterapi.dev/v1/${COUNTER_NS}/${COUNTER_NAME}`;
+/* ── Globalny licznik przetworzonych obrazków (Abacus API) ── */
+const ABACUS_NS = 'konwerter-webp-cyfrowe';
+const ABACUS_KEY = 'images-converted';
+const ABACUS_HIT = `https://abacus.jasoncameron.dev/hit/${ABACUS_NS}/${ABACUS_KEY}`;
+const ABACUS_GET = `https://abacus.jasoncameron.dev/get/${ABACUS_NS}/${ABACUS_KEY}`;
 const counterEl = $('counter-num');
+const counterTime = $('counter-time');
+const MINUTES_PER_IMAGE = 5;
+
+let displayedCount = 0;
+let pendingHits = 0;
+let flushTimer = null;
 
 function updateCounterDisplay(value) {
-  counterEl.textContent = Number(value).toLocaleString('pl-PL');
+  displayedCount = Number(value);
+  counterEl.textContent = displayedCount.toLocaleString('pl-PL');
+  /* Zaoszczędzony czas */
+  const totalMin = displayedCount * MINUTES_PER_IMAGE;
+  const hrs = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hrs > 0) {
+    counterTime.textContent = `⏱ Zaoszczędzono ~${hrs} godz. ${mins > 0 ? mins + ' min' : ''} ręcznej pracy`;
+  } else {
+    counterTime.textContent = `⏱ Zaoszczędzono ~${totalMin} min ręcznej pracy`;
+  }
 }
 
 function bumpAnimation() {
@@ -483,17 +500,35 @@ function bumpAnimation() {
   setTimeout(() => counterEl.classList.remove('bump'), 400);
 }
 
-/* Inkrementuj licznik o 1 na serwerze */
+/* Kolejkuj hit — wysyłaj co 800ms (debounce), max 1 request na batch */
 function addToCounter() {
-  fetch(`${COUNTER_API}/up`).then(r => r.json()).then(data => {
-    if (data.count != null) { updateCounterDisplay(data.count); bumpAnimation(); }
-  }).catch(() => {});
+  pendingHits++;
+  /* Natychmiast podbij wyświetlaną wartość (optymistyczny update) */
+  updateCounterDisplay(displayedCount + 1);
+  bumpAnimation();
+
+  /* Debounce — poczekaj aż batch się skończy, potem wyślij wszystkie hity */
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushHits, 800);
+}
+
+async function flushHits() {
+  const hits = pendingHits;
+  pendingHits = 0;
+  /* Wyślij sekwencyjnie (Abacus: +1 per request, rate limit 30/10s) */
+  for (let i = 0; i < hits; i++) {
+    try {
+      const r = await fetch(ABACUS_HIT);
+      const data = await r.json();
+      if (data.value != null) updateCounterDisplay(data.value);
+    } catch { break; }
+  }
 }
 
 /* Pobierz aktualną wartość przy starcie */
-fetch(COUNTER_API).then(r => r.json()).then(data => {
-  if (data.count != null) updateCounterDisplay(data.count);
-}).catch(() => {});
+fetch(ABACUS_GET).then(r => r.json()).then(data => {
+  if (data.value != null) updateCounterDisplay(data.value);
+}).catch(() => { counterEl.textContent = '0'; });
 
 /* ── Zakładki ── */
 tabs.forEach(tab => {
