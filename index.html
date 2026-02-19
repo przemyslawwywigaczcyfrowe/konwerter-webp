@@ -429,8 +429,8 @@ async function handleConvert(files) {
     status.textContent = 'Konwertuję...';
     try {
       const blob = await toWebPBlob(await loadImg(files[0]), quality);
-      download(blob, files[0].name + '.webp');
-      showThumb(URL.createObjectURL(blob), files[0].name + '.webp', blob.size);
+      download(blob, swapExt(files[0].name));
+      showThumb(URL.createObjectURL(blob), swapExt(files[0].name), blob.size);
       status.textContent = 'Gotowe! Plik pobrany.';
     } catch (e) { status.textContent = e.message; }
     return;
@@ -475,8 +475,8 @@ async function processDesc(loaded, uniform) {
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
     const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, uniform, avgRatio);
-    download(blob, loaded[0].file.name + '.webp');
-    showThumb(URL.createObjectURL(blob), loaded[0].file.name + '.webp', blob.size);
+    download(blob, swapExt(loaded[0].file.name));
+    showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
@@ -532,8 +532,8 @@ async function handleProduct(files) {
     status.textContent = 'Konwertuję...';
     const img = await loadImg(files[0]);
     const blob = await productConvertSingle(img, targetPx, bgColor, thresh, quality);
-    download(blob, files[0].name + '.webp');
-    showThumb(URL.createObjectURL(blob), files[0].name + '.webp', blob.size);
+    download(blob, swapExt(files[0].name));
+    showThumb(URL.createObjectURL(blob), swapExt(files[0].name), blob.size);
     status.textContent = 'Gotowe! Plik pobrany.';
     return;
   }
@@ -763,16 +763,26 @@ function productConvertSingle(img, size, bgColor, threshold, quality) {
 }
 
 function getContentBounds(img, threshold) {
+  const origW = img.naturalWidth;
+  const origH = img.naturalHeight;
+
+  /* Przeskaluj do max 600px na dłuższym boku — drastycznie przyspiesza analizę */
+  const MAX_ANALYSIS = 600;
+  const scale = Math.min(1, MAX_ANALYSIS / Math.max(origW, origH));
+  const aW = Math.round(origW * scale);
+  const aH = Math.round(origH * scale);
+
   const c = document.createElement('canvas');
-  c.width = img.naturalWidth;
-  c.height = img.naturalHeight;
+  c.width = aW;
+  c.height = aH;
   const ctx = c.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  const d = ctx.getImageData(0, 0, c.width, c.height).data;
-  let minX = c.width, minY = c.height, maxX = 0, maxY = 0, found = false;
-  for (let y = 0; y < c.height; y++) {
-    for (let x = 0; x < c.width; x++) {
-      const i = (y * c.width + x) * 4;
+  ctx.drawImage(img, 0, 0, aW, aH);
+
+  const d = ctx.getImageData(0, 0, aW, aH).data;
+  let minX = aW, minY = aH, maxX = 0, maxY = 0, found = false;
+  for (let y = 0; y < aH; y++) {
+    for (let x = 0; x < aW; x++) {
+      const i = (y * aW + x) * 4;
       if (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
@@ -782,19 +792,27 @@ function getContentBounds(img, threshold) {
       }
     }
   }
-  if (!found) return { left: 0, top: 0, right: img.naturalWidth, bottom: img.naturalHeight };
-  const buf = 2;
+  if (!found) return { left: 0, top: 0, right: origW, bottom: origH };
+
+  /* Przelicz z powrotem na oryginalne wymiary + bufor */
+  const buf = Math.ceil(3 / scale);
   return {
-    left:   Math.max(0, minX - buf),
-    top:    Math.max(0, minY - buf),
-    right:  Math.min(c.width, maxX + buf),
-    bottom: Math.min(c.height, maxY + buf)
+    left:   Math.max(0, Math.floor(minX / scale) - buf),
+    top:    Math.max(0, Math.floor(minY / scale) - buf),
+    right:  Math.min(origW, Math.ceil(maxX / scale) + buf),
+    bottom: Math.min(origH, Math.ceil(maxY / scale) + buf)
   };
 }
 
 /* ══════════════════════════════════════════════
    Wspólne narzędzia
    ══════════════════════════════════════════════ */
+/* Zamiana rozszerzenia na .webp (obrazek.png → obrazek.webp) */
+function swapExt(name) {
+  const dot = name.lastIndexOf('.');
+  return (dot > 0 ? name.substring(0, dot) : name) + '.webp';
+}
+
 /* Mikro-pauza — pozwala przeglądarce odmalować UI */
 function tick() { return new Promise(r => setTimeout(r, 0)); }
 
@@ -829,7 +847,7 @@ async function zipConvert(files, convertFn, extraInfoFn) {
   for (let i = 0; i < files.length; i++) {
     try {
       const blob = await convertFn(files[i], i);
-      const name = files[i].name + '.webp';
+      const name = swapExt(files[i].name);
       zip.file(name, blob);
       const extra = extraInfoFn ? extraInfoFn(files[i], i, blob) : null;
       showThumb(URL.createObjectURL(blob), name, blob.size, extra);
