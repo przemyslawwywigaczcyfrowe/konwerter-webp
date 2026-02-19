@@ -6,89 +6,185 @@
 <title>Konwerter na WebP</title>
 <!--
   ╔══════════════════════════════════════════════════════════════╗
-  ║  Konwerter na WebP v1.0                                      ║
+  ║  Konwerter na WebP v2.0                                      ║
   ║  Autor: Przemysław Wywigacz                                  ║
   ╚══════════════════════════════════════════════════════════════╝
 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0a0a0a;
-    color: #e0e0e0;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
-  h1 {
-    font-size: 1.4rem;
-    font-weight: 600;
-    margin-bottom: 0.3rem;
-    color: #fff;
-  }
-  .subtitle {
-    font-size: 0.8rem;
-    color: #666;
-    margin-bottom: 1.5rem;
-  }
-  #drop-zone {
-    width: min(500px, 90vw);
-    border: 2px dashed #333;
-    border-radius: 12px;
-    padding: 3rem 2rem;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-  }
-  #drop-zone.drag-over {
-    border-color: #4f8cff;
-    background: rgba(79, 140, 255, 0.05);
-  }
-  #drop-zone p {
-    font-size: 0.95rem;
-    color: #888;
-    pointer-events: none;
-  }
-  #drop-zone .icon {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
-    pointer-events: none;
-    display: block;
-  }
-  #drop-zone .formats {
-    font-size: 0.7rem;
-    color: #555;
-    margin-top: 0.6rem;
-    pointer-events: none;
-  }
-  .controls {
-    width: min(500px, 90vw);
-    margin-top: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    font-size: 0.8rem;
-    color: #888;
-  }
-  .controls label { white-space: nowrap; }
-  .controls input[type="range"] {
-    flex: 1;
-    accent-color: #4f8cff;
-  }
-  .controls span {
-    min-width: 2.5ch;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  #status {
-    margin-top: 1.2rem;
-    font-size: 0.85rem;
-    color: #4f8cff;
-    min-height: 1.2em;
-  }
-  #file-input { display: none; }
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+}
+
+h1 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
+.subtitle { font-size: .8rem; color: #666; margin-bottom: 1.5rem; }
+
+/* ── Zakładki trybów ── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 1.2rem;
+  background: #1a1a1a;
+  border-radius: 10px;
+  padding: 3px;
+  width: min(600px, 94vw);
+}
+.tab {
+  flex: 1;
+  padding: .55rem .5rem;
+  text-align: center;
+  font-size: .78rem;
+  color: #888;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .2s;
+  line-height: 1.3;
+}
+.tab:hover { color: #bbb; }
+.tab.active { background: #4f8cff; color: #fff; }
+.tab-icon { display: block; font-size: 1.1rem; margin-bottom: 2px; }
+
+/* ── Strefa drop ── */
+.main { width: min(600px, 94vw); }
+#drop-zone {
+  border: 2px dashed #333;
+  border-radius: 12px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+#drop-zone.drag-over { border-color: #4f8cff; background: rgba(79,140,255,.05); }
+#drop-zone p { font-size: .92rem; color: #888; pointer-events: none; }
+#drop-zone .icon { font-size: 2.2rem; margin-bottom: .4rem; pointer-events: none; display: block; }
+#drop-zone .formats { font-size: .68rem; color: #555; margin-top: .5rem; pointer-events: none; }
+
+/* ── Opcje ── */
+.options {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.opt-row {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  font-size: .8rem;
+  color: #888;
+}
+.opt-row label { white-space: nowrap; min-width: 7.5rem; }
+.opt-row input[type="range"] { flex: 1; accent-color: #4f8cff; }
+.opt-row input[type="number"] {
+  width: 5.5rem;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  border-radius: 6px;
+  padding: .3rem .5rem;
+  font-size: .8rem;
+  text-align: center;
+}
+.opt-row input[type="number"]:focus { outline: 1px solid #4f8cff; border-color: #4f8cff; }
+.opt-row span {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.opt-row select {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #e0e0e0;
+  border-radius: 6px;
+  padding: .3rem .5rem;
+  font-size: .8rem;
+}
+.opt-row select:focus { outline: 1px solid #4f8cff; border-color: #4f8cff; }
+
+/* Checkbox */
+.chk { display: flex; align-items: center; gap: .5rem; cursor: pointer; font-size: .8rem; color: #888; }
+.chk input { accent-color: #4f8cff; width: 15px; height: 15px; }
+
+/* ── Dialog proporcji ── */
+#aspect-dialog {
+  display: none;
+  margin-top: 1rem;
+  background: rgba(255,193,7,.08);
+  border: 1px solid rgba(255,193,7,.25);
+  border-left: 4px solid #ffc107;
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: .82rem;
+  color: #ccc;
+  line-height: 1.5;
+}
+#aspect-dialog .btns { display: flex; gap: .5rem; margin-top: .8rem; flex-wrap: wrap; }
+#aspect-dialog button {
+  padding: .45rem 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 600;
+  transition: .15s;
+}
+.btn-yes { background: #4f8cff; color: #fff; }
+.btn-yes:hover { background: #3a7ae0; }
+.btn-no { background: #2a2a2a; color: #aaa; }
+.btn-no:hover { background: #333; }
+
+/* ── Status + podgląd ── */
+#status {
+  margin-top: 1rem;
+  font-size: .85rem;
+  color: #4f8cff;
+  min-height: 1.2em;
+  text-align: center;
+}
+#preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 1rem;
+}
+.thumb {
+  background: #141414;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: .7rem;
+  color: #777;
+  text-align: center;
+  overflow: hidden;
+}
+.thumb img {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  display: block;
+}
+.thumb .info { line-height: 1.4; }
+.thumb .name { color: #aaa; word-break: break-all; }
+.thumb .size { color: #4f8cff; }
+
+#file-input { display: none; }
+
+/* ── Responsywność ── */
+@media (max-width: 420px) {
+  .tab { font-size: .7rem; padding: .45rem .3rem; }
+  .opt-row { flex-wrap: wrap; }
+}
 </style>
 </head>
 <body>
@@ -96,82 +192,368 @@
 <h1>Konwerter na WebP</h1>
 <p class="subtitle">Wszystko działa lokalnie w przeglądarce</p>
 
-<div id="drop-zone">
-  <span class="icon">🖼️</span>
-  <p>Upuść obrazki tutaj lub kliknij, aby wybrać</p>
-  <p class="formats">JPG / JPEG / PNG / BMP / GIF / TIFF / AVIF / SVG / ICO / WEBP</p>
+<div class="tabs">
+  <button class="tab active" data-mode="convert" title="Prosta konwersja na WebP">
+    <span class="tab-icon">🔄</span>Konwersja
+  </button>
+  <button class="tab" data-mode="desc" title="Optymalizacja do opisów na stronę">
+    <span class="tab-icon">📝</span>Opis na stronę
+  </button>
+  <button class="tab" data-mode="product" title="Wycięcie białego tła, kadrowanie do kwadratu">
+    <span class="tab-icon">📦</span>Zdjęcia produktowe
+  </button>
 </div>
 
-<div class="controls">
-  <label for="quality">Jakość:</label>
-  <input type="range" id="quality" min="1" max="100" value="80">
-  <span id="quality-val">80%</span>
+<div class="main">
+  <div id="drop-zone">
+    <span class="icon">🖼️</span>
+    <p>Upuść obrazki tutaj lub kliknij, aby wybrać</p>
+    <p class="formats">JPG · PNG · BMP · GIF · TIFF · AVIF · SVG · ICO · WEBP</p>
+  </div>
+
+  <!-- Opcje wspólne -->
+  <div class="options">
+    <div class="opt-row">
+      <label for="quality">Jakość:</label>
+      <input type="range" id="quality" min="1" max="100" value="80">
+      <span id="quality-val">80%</span>
+    </div>
+
+    <!-- Opcje trybu "Opis na stronę" -->
+    <div class="mode-opts" data-for="desc" style="display:none">
+      <div class="opt-row">
+        <label for="max-width">Max szerokość (px):</label>
+        <input type="number" id="max-width" value="1000" min="100" max="6000" step="50">
+      </div>
+      <div class="opt-row">
+        <label for="max-kb">Max rozmiar (KB):</label>
+        <input type="number" id="max-kb" value="300" min="10" max="10000" step="10">
+      </div>
+    </div>
+
+    <!-- Opcje trybu "Zdjęcia produktowe" -->
+    <div class="mode-opts" data-for="product" style="display:none">
+      <div class="opt-row">
+        <label for="target-size">Wymiar (px):</label>
+        <input type="number" id="target-size" value="1300" min="100" max="6000" step="50">
+      </div>
+      <div class="opt-row">
+        <label for="bg-color">Tło:</label>
+        <select id="bg-color">
+          <option value="#FFFFFF">Białe</option>
+          <option value="#000000">Czarne</option>
+          <option value="transparent">Przezroczyste</option>
+        </select>
+      </div>
+      <div class="opt-row">
+        <label for="threshold">Czułość detekcji:</label>
+        <input type="range" id="threshold" min="200" max="255" value="250">
+        <span id="threshold-val">250</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="aspect-dialog">
+    <p id="aspect-text"></p>
+    <div class="btns">
+      <button class="btn-yes" id="btn-uniform-yes">Tak, ujednolić proporcje</button>
+      <button class="btn-no" id="btn-uniform-no">Nie, zostawić oryginalne</button>
+    </div>
+  </div>
+
+  <p id="status"></p>
+  <div id="preview"></div>
 </div>
 
-<p id="status"></p>
 <input type="file" id="file-input" accept="image/*" multiple>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const qualitySlider = document.getElementById('quality');
-const qualityVal = document.getElementById('quality-val');
-const status = document.getElementById('status');
+/* ── Elementy ── */
+const $ = id => document.getElementById(id);
+const dropZone = $('drop-zone');
+const fileInput = $('file-input');
+const qualitySlider = $('quality');
+const qualityVal = $('quality-val');
+const thresholdSlider = $('threshold');
+const thresholdVal = $('threshold-val');
+const status = $('status');
+const preview = $('preview');
+const aspectDialog = $('aspect-dialog');
+const aspectText = $('aspect-text');
+const tabs = document.querySelectorAll('.tab');
+const modeOpts = document.querySelectorAll('.mode-opts');
 
-qualitySlider.addEventListener('input', () => {
-  qualityVal.textContent = qualitySlider.value + '%';
+let currentMode = 'convert';
+
+/* ── Zakładki ── */
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentMode = tab.dataset.mode;
+    modeOpts.forEach(o => o.style.display = o.dataset.for === currentMode ? '' : 'none');
+    resetUI();
+  });
 });
 
+/* ── Suwaki ── */
+qualitySlider.addEventListener('input', () => qualityVal.textContent = qualitySlider.value + '%');
+thresholdSlider.addEventListener('input', () => thresholdVal.textContent = thresholdSlider.value);
+
+/* ── Drag & Drop ── */
 dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); route(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { route(fileInput.files); fileInput.value = ''; });
 
-dropZone.addEventListener('dragover', e => {
-  e.preventDefault();
-  dropZone.classList.add('drag-over');
-});
+function resetUI() {
+  status.textContent = '';
+  preview.innerHTML = '';
+  aspectDialog.style.display = 'none';
+}
 
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
-});
+/* ── Router trybów ── */
+function route(fileList) {
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!files.length) { status.textContent = 'Brak obsługiwanych plików graficznych.'; return; }
+  resetUI();
+  if (currentMode === 'convert') handleConvert(files);
+  else if (currentMode === 'desc') handleDesc(files);
+  else if (currentMode === 'product') handleProduct(files);
+}
 
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  handleFiles(e.dataTransfer.files);
-});
+/* ══════════════════════════════════════════════
+   TRYB 1: Prosta konwersja
+   ══════════════════════════════════════════════ */
+async function handleConvert(files) {
+  const quality = qualitySlider.value / 100;
+  if (files.length === 1) {
+    status.textContent = 'Konwertuję...';
+    try {
+      const blob = await toWebPBlob(await loadImg(files[0]), quality);
+      download(blob, files[0].name + '.webp');
+      showThumb(URL.createObjectURL(blob), files[0].name + '.webp', blob.size);
+      status.textContent = 'Gotowe! Plik pobrany.';
+    } catch (e) { status.textContent = e.message; }
+    return;
+  }
+  await zipConvert(files, async (file) => {
+    const img = await loadImg(file);
+    return toWebPBlob(img, quality);
+  });
+}
 
-fileInput.addEventListener('change', () => {
-  handleFiles(fileInput.files);
-  fileInput.value = '';
-});
+/* ══════════════════════════════════════════════
+   TRYB 2: Opis na stronę (max szer, max KB, proporcje)
+   ══════════════════════════════════════════════ */
+async function handleDesc(files) {
+  const loaded = [];
+  for (const f of files) {
+    const img = await loadImg(f);
+    loaded.push({ file: f, img, ratio: img.naturalWidth / img.naturalHeight });
+  }
 
+  /* Analiza proporcji — szukamy par, które różnią się o <15% */
+  if (loaded.length > 1) {
+    const pairs = findSimilarPairs(loaded);
+    if (pairs > 0) {
+      aspectText.textContent =
+        `Wykryto ${pairs} par zdjęć o zbliżonych, ale różnych proporcjach. ` +
+        `Ujednolicić je do wspólnego formatu (docięcie do średniej proporcji)?`;
+      aspectDialog.style.display = '';
+      await new Promise(resolve => {
+        $('btn-uniform-yes').onclick = () => { aspectDialog.style.display = 'none'; processDesc(loaded, true); resolve(); };
+        $('btn-uniform-no').onclick  = () => { aspectDialog.style.display = 'none'; processDesc(loaded, false); resolve(); };
+      });
+      return;
+    }
+  }
+  processDesc(loaded, false);
+}
 
-function convertToWebP(file, quality) {
+async function processDesc(loaded, uniform) {
+  const maxW = parseInt($('max-width').value) || 1000;
+  const maxKB = (parseInt($('max-kb').value) || 300) * 1024;
+  const avgRatio = loaded.reduce((a, c) => a + c.ratio, 0) / loaded.length;
+  const quality = qualitySlider.value / 100;
+
+  if (loaded.length === 1) {
+    status.textContent = 'Konwertuję...';
+    const blob = await descConvertOne(loaded[0], maxW, maxKB, quality, uniform, avgRatio);
+    download(blob, loaded[0].file.name + '.webp');
+    showThumb(URL.createObjectURL(blob), loaded[0].file.name + '.webp', blob.size);
+    status.textContent = 'Gotowe! Plik pobrany.';
+    return;
+  }
+
+  await zipConvert(loaded.map(l => l.file), async (file, i) => {
+    return descConvertOne(loaded[i], maxW, maxKB, quality, uniform, avgRatio);
+  });
+}
+
+async function descConvertOne(item, maxW, maxKB, startQuality, uniform, avgRatio) {
+  const { img, ratio } = item;
+  let targetW = Math.min(img.naturalWidth, maxW);
+  let targetH = targetW / ratio;
+  let drawW = targetW, drawH = targetH, ox = 0, oy = 0;
+
+  if (uniform && Math.abs(ratio - avgRatio) < 0.15) {
+    targetH = targetW / avgRatio;
+    const s = Math.max(targetW / img.naturalWidth, targetH / img.naturalHeight);
+    drawW = img.naturalWidth * s;
+    drawH = img.naturalHeight * s;
+    ox = (targetW - drawW) / 2;
+    oy = (targetH - drawH) / 2;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(targetW);
+  canvas.height = Math.round(targetH);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, ox, oy, drawW, drawH);
+
+  /* Kompresja pętlowa — obniżaj jakość aż zmieści się w max KB */
+  let q = startQuality;
+  let blob = await canvasToBlob(canvas, q);
+  while (blob.size > maxKB && q > 0.05) {
+    q -= 0.05;
+    blob = await canvasToBlob(canvas, q);
+  }
+  return blob;
+}
+
+/* ══════════════════════════════════════════════
+   TRYB 3: Zdjęcia produktowe (auto-crop białego tła)
+   ══════════════════════════════════════════════ */
+async function handleProduct(files) {
+  const targetPx = parseInt($('target-size').value) || 1300;
+  const bgColor = $('bg-color').value;
+  const thresh = parseInt(thresholdSlider.value);
+  const quality = qualitySlider.value / 100;
+
+  if (files.length === 1) {
+    status.textContent = 'Konwertuję...';
+    const img = await loadImg(files[0]);
+    const blob = await productConvert(img, targetPx, bgColor, thresh, quality);
+    download(blob, files[0].name + '.webp');
+    showThumb(URL.createObjectURL(blob), files[0].name + '.webp', blob.size);
+    status.textContent = 'Gotowe! Plik pobrany.';
+    return;
+  }
+
+  await zipConvert(files, async (file) => {
+    const img = await loadImg(file);
+    return productConvert(img, targetPx, bgColor, thresh, quality);
+  });
+}
+
+function productConvert(img, size, bgColor, threshold, quality) {
+  const bounds = getContentBounds(img, threshold);
+  const cropW = bounds.right - bounds.left;
+  const cropH = bounds.bottom - bounds.top;
+  const margin = Math.round(size * 0.004);
+  const drawArea = size - margin * 2;
+  const scale = Math.min(drawArea / cropW, drawArea / cropH);
+  const finalW = cropW * scale;
+  const finalH = cropH * scale;
+  const posX = (size - finalW) / 2;
+  const posY = (size - finalH) / 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  if (bgColor === 'transparent') {
+    ctx.clearRect(0, 0, size, size);
+  } else {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, size, size);
+  }
+  ctx.drawImage(img, bounds.left, bounds.top, cropW, cropH, posX, posY, finalW, finalH);
+  return canvasToBlob(canvas, quality);
+}
+
+function getContentBounds(img, threshold) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let minX = c.width, minY = c.height, maxX = 0, maxY = 0, found = false;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      const i = (y * c.width + x) * 4;
+      if (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        found = true;
+      }
+    }
+  }
+  if (!found) return { left: 0, top: 0, right: img.naturalWidth, bottom: img.naturalHeight };
+  const buf = 2;
+  return {
+    left:   Math.max(0, minX - buf),
+    top:    Math.max(0, minY - buf),
+    right:  Math.min(c.width, maxX + buf),
+    bottom: Math.min(c.height, maxY + buf)
+  };
+}
+
+/* ══════════════════════════════════════════════
+   Wspólne narzędzia
+   ══════════════════════════════════════════════ */
+function loadImg(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      canvas.toBlob(
-        blob => {
-          URL.revokeObjectURL(url);
-          if (blob) resolve(blob);
-          else reject(new Error('Konwersja nie powiodła się: ' + file.name));
-        },
-        'image/webp',
-        quality
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Nie udało się wczytać: ' + file.name));
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Nie udało się wczytać: ' + file.name)); };
     img.src = url;
   });
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Konwersja nie powiodła się')), 'image/webp', quality);
+  });
+}
+
+function toWebPBlob(img, quality) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return canvasToBlob(c, quality);
+}
+
+async function zipConvert(files, convertFn) {
+  const zip = new JSZip();
+  let done = 0, errors = 0;
+  status.textContent = `Konwertuję 0/${files.length}...`;
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const blob = await convertFn(files[i], i);
+      const name = files[i].name + '.webp';
+      zip.file(name, blob);
+      showThumb(URL.createObjectURL(blob), name, blob.size);
+    } catch { errors++; }
+    done++;
+    status.textContent = `Konwertuję ${done}/${files.length}...`;
+  }
+  if (done - errors === 0) { status.textContent = 'Żaden plik nie został skonwertowany.'; return; }
+  status.textContent = 'Pakuję ZIP...';
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  download(zipBlob, 'webp-obrazki.zip');
+  const msg = `Gotowe! Pobrano ZIP (${done - errors} plików).`;
+  status.textContent = errors ? msg + ` ${errors} błędów.` : msg;
 }
 
 function download(blob, filename) {
@@ -182,54 +564,23 @@ function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-async function handleFiles(fileList) {
-  const files = [...fileList].filter(f => f.type.startsWith('image/'));
-  if (!files.length) {
-    status.textContent = 'Brak obsługiwanych plików graficznych.';
-    return;
-  }
+function showThumb(src, name, bytes) {
+  const d = document.createElement('div');
+  d.className = 'thumb';
+  const kb = (bytes / 1024).toFixed(0);
+  d.innerHTML = `<img src="${src}"><div class="info"><div class="name">${esc(name)}</div><div class="size">${kb} KB</div></div>`;
+  preview.appendChild(d);
+}
 
-  const quality = qualitySlider.value / 100;
+function esc(s) { const t = document.createElement('span'); t.textContent = s; return t.innerHTML; }
 
-  if (files.length === 1) {
-    status.textContent = 'Konwertuję...';
-    try {
-      const blob = await convertToWebP(files[0], quality);
-      download(blob, files[0].name + '.webp');
-      status.textContent = 'Gotowe! Plik pobrany.';
-    } catch (e) {
-      status.textContent = e.message;
-    }
-    return;
-  }
-
-  // Wiele plików → ZIP
-  status.textContent = `Konwertuję 0/${files.length}...`;
-  const zip = new JSZip();
-  let done = 0;
-  let errors = 0;
-
-  for (const file of files) {
-    try {
-      const blob = await convertToWebP(file, quality);
-      zip.file(file.name + '.webp', blob);
-    } catch {
-      errors++;
-    }
-    done++;
-    status.textContent = `Konwertuję ${done}/${files.length}...`;
-  }
-
-  if (done - errors === 0) {
-    status.textContent = 'Żaden plik nie został skonwertowany.';
-    return;
-  }
-
-  status.textContent = 'Pakuję ZIP...';
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  download(zipBlob, 'webp-obrazki.zip');
-  const msg = `Gotowe! Pobrano ZIP (${done - errors} plików).`;
-  status.textContent = errors ? msg + ` ${errors} błędów.` : msg;
+function findSimilarPairs(loaded) {
+  let count = 0;
+  for (let i = 0; i < loaded.length; i++)
+    for (let j = i + 1; j < loaded.length; j++)
+      if (Math.abs(loaded[i].ratio - loaded[j].ratio) > 0 &&
+          Math.abs(loaded[i].ratio - loaded[j].ratio) < 0.15) count++;
+  return count;
 }
 </script>
 </body>
