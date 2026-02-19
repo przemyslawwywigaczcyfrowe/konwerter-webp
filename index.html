@@ -551,7 +551,7 @@ async function handleProduct(files) {
     try {
       const img = await loadImg(files[fi]);
       await tick();
-      const bounds = getContentBounds(img, thresh);
+      const bounds = await getContentBounds(img, thresh);
       const cropW = bounds.right - bounds.left;
       const cropH = bounds.bottom - bounds.top;
       items.push({ file: files[fi], img, bounds, cropW, cropH });
@@ -743,8 +743,8 @@ function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality
 }
 
 /* Stary single (1 zdjęcie) — prosty contain w kwadracie */
-function productConvertSingle(img, size, bgColor, threshold, quality) {
-  const bounds = getContentBounds(img, threshold);
+async function productConvertSingle(img, size, bgColor, threshold, quality) {
+  const bounds = await getContentBounds(img, threshold);
   const cropW = bounds.right - bounds.left;
   const cropH = bounds.bottom - bounds.top;
   const margin = Math.round(size * 0.004);
@@ -769,12 +769,12 @@ function productConvertSingle(img, size, bgColor, threshold, quality) {
   return canvasToBlob(canvas, quality);
 }
 
-function getContentBounds(img, threshold) {
+async function getContentBounds(img, threshold) {
   const origW = img.naturalWidth;
   const origH = img.naturalHeight;
 
-  /* Przeskaluj do max 600px na dłuższym boku — drastycznie przyspiesza analizę */
-  const MAX_ANALYSIS = 600;
+  /* Przeskaluj do max 400px — mniejsze = szybsze */
+  const MAX_ANALYSIS = 400;
   const scale = Math.min(1, MAX_ANALYSIS / Math.max(origW, origH));
   const aW = Math.round(origW * scale);
   const aH = Math.round(origH * scale);
@@ -787,21 +787,28 @@ function getContentBounds(img, threshold) {
 
   const d = ctx.getImageData(0, 0, aW, aH).data;
   let minX = aW, minY = aH, maxX = 0, maxY = 0, found = false;
-  for (let y = 0; y < aH; y++) {
-    for (let x = 0; x < aW; x++) {
-      const i = (y * aW + x) * 4;
-      if (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        found = true;
+
+  /* Skanuj wierszami — co 50 wierszy oddaj kontrolę przeglądarce */
+  const CHUNK = 50;
+  for (let yStart = 0; yStart < aH; yStart += CHUNK) {
+    const yEnd = Math.min(yStart + CHUNK, aH);
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = 0; x < aW; x++) {
+        const i = (y * aW + x) * 4;
+        if (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          found = true;
+        }
       }
     }
+    if (yStart + CHUNK < aH) await tick();
   }
+
   if (!found) return { left: 0, top: 0, right: origW, bottom: origH };
 
-  /* Przelicz z powrotem na oryginalne wymiary + bufor */
   const buf = Math.ceil(3 / scale);
   return {
     left:   Math.max(0, Math.floor(minX / scale) - buf),
