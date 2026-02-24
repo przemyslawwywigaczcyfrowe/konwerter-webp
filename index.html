@@ -374,6 +374,32 @@ h1 {
 
 #file-input { display: none; }
 
+/* ── Przycisk konwertuj (faza podglądu) ── */
+.convert-btn {
+  display: none;
+  width: 100%;
+  margin-top: 1rem;
+  padding: .75rem 0;
+  background: #4f8cff;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+  letter-spacing: .01em;
+}
+.convert-btn:hover { background: #3a7ae0; box-shadow: 0 2px 12px rgba(79,140,255,.3); }
+
+/* Podgląd-phase — delikatniejsze tło miniatur */
+#preview.preview-phase .thumb {
+  border-color: rgba(79,140,255,.15);
+}
+#preview.preview-phase .thumb img {
+  transition: transform .2s ease;
+}
+
 /* ── Licznik ── */
 .counter {
   margin-top: auto;
@@ -540,6 +566,7 @@ h1 {
 
   <p id="status"></p>
   <div id="preview"></div>
+  <button id="btn-convert" class="convert-btn">Konwertuj</button>
 </div>
 
 <input type="file" id="file-input" accept="image/*" multiple>
@@ -569,6 +596,8 @@ const modeOpts = document.querySelectorAll('.mode-opts');
 
 let currentMode = 'convert';
 let selectedFit = 'contain';
+let pendingFiles = null;
+const btnConvert = $('btn-convert');
 
 /* ── Globalny licznik przetworzonych obrazków (Abacus API) ── */
 const ABACUS_NS = 'konwerter-webp-cyfrowe';
@@ -670,6 +699,8 @@ function setupTransformBar(barId, mode) {
         if (a === 'flipH') b.classList.toggle('active', t.flipH);
         else if (a === 'flipV') b.classList.toggle('active', t.flipV);
       });
+      /* Aktualizuj podgląd na żywo */
+      updatePreviewTransform();
     });
   });
 }
@@ -727,7 +758,10 @@ fileInput.addEventListener('change', () => {
 function resetUI() {
   status.textContent = '';
   preview.innerHTML = '';
+  preview.classList.remove('preview-phase');
   dimDialog.style.display = 'none';
+  btnConvert.style.display = 'none';
+  pendingFiles = null;
 }
 
 /* ── Router trybów ── */
@@ -736,9 +770,50 @@ function route(fileList) {
   if (!files.length) { status.textContent = 'Brak obsługiwanych plików graficznych.'; return; }
   resetUI();
   if (currentMode === 'convert') handleConvert(files);
-  else if (currentMode === 'desc') handleDesc(files);
-  else if (currentMode === 'product') handleProduct(files);
+  else showPreview(files);
 }
+
+/* ── Podgląd z transformacją na żywo ── */
+function showPreview(files) {
+  pendingFiles = files;
+  preview.classList.add('preview-phase');
+  for (const file of files) {
+    const d = document.createElement('div');
+    d.className = 'thumb';
+    const url = URL.createObjectURL(file);
+    d.innerHTML = `<img src="${url}"><div class="info"><div class="name">${esc(file.name)}</div></div>`;
+    preview.appendChild(d);
+  }
+  btnConvert.style.display = 'block';
+  status.textContent = `${files.length} ${files.length === 1 ? 'plik' : 'plików'} — ustaw transformację i kliknij Konwertuj`;
+  updatePreviewTransform();
+}
+
+function updatePreviewTransform() {
+  const t = transforms[currentMode];
+  if (!t) return;
+  let css = '';
+  if (t.rot) css += `rotate(${t.rot}deg) `;
+  if (t.flipH) css += 'scaleX(-1) ';
+  if (t.flipV) css += 'scaleY(-1) ';
+  css = css.trim() || 'none';
+  preview.querySelectorAll('.thumb img').forEach(img => {
+    img.style.transform = css;
+  });
+}
+
+/* ── Przycisk Konwertuj ── */
+btnConvert.addEventListener('click', () => {
+  if (!pendingFiles) return;
+  const files = pendingFiles;
+  pendingFiles = null;
+  btnConvert.style.display = 'none';
+  preview.innerHTML = '';
+  preview.classList.remove('preview-phase');
+  status.textContent = '';
+  if (currentMode === 'desc') handleDesc(files);
+  else if (currentMode === 'product') handleProduct(files);
+});
 
 /* ══════════════════════════════════════════════
    TRYB 1: Prosta konwersja
