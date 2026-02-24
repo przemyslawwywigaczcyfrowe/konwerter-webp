@@ -196,6 +196,41 @@ h1 {
 .opt-row select:hover { border-color: #3a3a3a; }
 .opt-row select:focus { outline: none; border-color: #4f8cff; box-shadow: 0 0 0 2px rgba(79,140,255,.15); }
 
+/* ── Pasek obracania ── */
+.transform-bar {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+}
+.transform-bar button {
+  width: 2.1rem;
+  height: 2.1rem;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #999;
+  font-size: .95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+  padding: 0;
+  line-height: 1;
+}
+.transform-bar button:hover { border-color: #4f8cff; color: #ddd; background: rgba(79,140,255,.05); }
+.transform-bar button.active {
+  border-color: #4f8cff;
+  background: rgba(79,140,255,.12);
+  color: #fff;
+}
+.transform-bar .sep {
+  width: 1px;
+  height: 1.4rem;
+  background: #2a2a2a;
+  margin: 0 .15rem;
+}
+
 /* ── Dialog (proporcje / wymiary) ── */
 .dialog-box {
   display: none;
@@ -437,6 +472,16 @@ h1 {
         <label for="max-kb">Max rozmiar (KB):</label>
         <input type="number" id="max-kb" value="300" min="10" max="10000" step="10">
       </div>
+      <div class="opt-row">
+        <label>Transformacja:</label>
+        <div class="transform-bar" id="transform-desc">
+          <button type="button" data-action="ccw" title="Obróć 90° w lewo">↺</button>
+          <button type="button" data-action="cw" title="Obróć 90° w prawo">↻</button>
+          <span class="sep"></span>
+          <button type="button" data-action="flipH" title="Odbij w poziomie">⇔</button>
+          <button type="button" data-action="flipV" title="Odbij w pionie">⇕</button>
+        </div>
+      </div>
     </div>
 
     <!-- Opcje trybu "Zdjęcia produktowe" -->
@@ -457,6 +502,21 @@ h1 {
         <label for="threshold">Czułość detekcji:</label>
         <input type="range" id="threshold" min="200" max="255" value="250">
         <span id="threshold-val">250</span>
+      </div>
+      <div class="opt-row">
+        <label for="fill-pct">Wypełnienie kadru:</label>
+        <input type="range" id="fill-pct" min="50" max="100" value="75">
+        <span id="fill-pct-val">75%</span>
+      </div>
+      <div class="opt-row">
+        <label>Transformacja:</label>
+        <div class="transform-bar" id="transform-product">
+          <button type="button" data-action="ccw" title="Obróć 90° w lewo">↺</button>
+          <button type="button" data-action="cw" title="Obróć 90° w prawo">↻</button>
+          <span class="sep"></span>
+          <button type="button" data-action="flipH" title="Odbij w poziomie">⇔</button>
+          <button type="button" data-action="flipV" title="Odbij w pionie">⇕</button>
+        </div>
       </div>
     </div>
   </div>
@@ -586,6 +646,57 @@ tabs.forEach(tab => {
 /* ── Suwaki ── */
 qualitySlider.addEventListener('input', () => qualityVal.textContent = qualitySlider.value + '%');
 thresholdSlider.addEventListener('input', () => thresholdVal.textContent = thresholdSlider.value);
+const fillPctSlider = $('fill-pct');
+const fillPctVal = $('fill-pct-val');
+fillPctSlider.addEventListener('input', () => fillPctVal.textContent = fillPctSlider.value + '%');
+
+/* ── Transformacja (obrót + odbicie) ── */
+/* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
+const transforms = { desc: { rot: 0, flipH: false, flipV: false }, product: { rot: 0, flipH: false, flipV: false } };
+
+function setupTransformBar(barId, mode) {
+  const bar = $(barId);
+  bar.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = transforms[mode];
+      const action = btn.dataset.action;
+      if (action === 'cw')  t.rot = (t.rot + 90) % 360;
+      else if (action === 'ccw') t.rot = (t.rot + 270) % 360;
+      else if (action === 'flipH') t.flipH = !t.flipH;
+      else if (action === 'flipV') t.flipV = !t.flipV;
+      /* Podświetl aktywne flips */
+      bar.querySelectorAll('button').forEach(b => {
+        const a = b.dataset.action;
+        if (a === 'flipH') b.classList.toggle('active', t.flipH);
+        else if (a === 'flipV') b.classList.toggle('active', t.flipV);
+      });
+    });
+  });
+}
+setupTransformBar('transform-desc', 'desc');
+setupTransformBar('transform-product', 'product');
+
+/* Pomocnicza: aplikuj transformację na canvas.
+   Przyjmuje img (lub canvas), zwraca nowy canvas z obróconym/odbitym obrazem. */
+function applyTransform(source, tState) {
+  const { rot, flipH, flipV } = tState;
+  if (rot === 0 && !flipH && !flipV) return null; /* brak zmian */
+  const sw = source.naturalWidth || source.width;
+  const sh = source.naturalHeight || source.height;
+  const swapped = (rot === 90 || rot === 270);
+  const outW = swapped ? sh : sw;
+  const outH = swapped ? sw : sh;
+  const c = document.createElement('canvas');
+  c.width = outW;
+  c.height = outH;
+  const ctx = c.getContext('2d');
+  ctx.translate(outW / 2, outH / 2);
+  ctx.rotate(rot * Math.PI / 180);
+  if (flipH) ctx.scale(-1, 1);
+  if (flipV) ctx.scale(1, -1);
+  ctx.drawImage(source, -sw / 2, -sh / 2);
+  return c;
+}
 
 /* ── Fit options ── */
 const fitDescs = {
@@ -658,12 +769,16 @@ async function handleConvert(files) {
    — max szerokość + max KB z loop compression
    ══════════════════════════════════════════════ */
 async function handleDesc(files) {
+  const tState = transforms.desc;
   const loaded = [];
   for (let i = 0; i < files.length; i++) {
     status.textContent = `Wczytuję ${i + 1}/${files.length}...`;
     await tick();
-    const img = await loadImg(files[i]);
-    const w = img.naturalWidth, h = img.naturalHeight;
+    let img = await loadImg(files[i]);
+    const transformed = applyTransform(img, tState);
+    if (transformed) img = transformed;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
     loaded.push({ file: files[i], img, w, h, ratio: w / h });
   }
 
@@ -763,16 +878,20 @@ async function descConvertOne(item, maxW, maxKB, startQuality, dominantRatio) {
    ══════════════════════════════════════════════ */
 async function handleProduct(files) {
   try {
+  const tState = transforms.product;
   const thresh = parseInt(thresholdSlider.value);
   const quality = qualitySlider.value / 100;
   const bgColor = $('bg-color').value;
   const targetPx = parseInt($('target-size').value) || 1300;
+  const fillPct = parseInt(fillPctSlider.value) / 100;
 
   /* Jedno zdjęcie — bez analizy, po prostu crop+kwadrat */
   if (files.length === 1) {
     status.textContent = 'Konwertuję...';
-    const img = await loadImg(files[0]);
-    const blob = await productConvertSingle(img, targetPx, bgColor, thresh, quality);
+    let img = await loadImg(files[0]);
+    const transformed = applyTransform(img, tState);
+    if (transformed) img = transformed;
+    const blob = await productConvertSingle(img, targetPx, bgColor, thresh, quality, fillPct);
     download(blob, swapExt(files[0].name));
     showThumb(URL.createObjectURL(blob), swapExt(files[0].name), blob.size);
     addToCounter();
@@ -787,7 +906,9 @@ async function handleProduct(files) {
     status.textContent = `Analizuję ${fi + 1}/${files.length}: ${fname}`;
     await tick();
     try {
-      const img = await loadImg(files[fi]);
+      let img = await loadImg(files[fi]);
+      const transformed = applyTransform(img, tState);
+      if (transformed) img = transformed;
       await tick();
       const bounds = await getContentBounds(img, thresh);
       const cropW = bounds.right - bounds.left;
@@ -808,7 +929,7 @@ async function handleProduct(files) {
   const analysis = analyzeDimensions(items.map(it => ({ w: it.cropW, h: it.cropH })));
 
   if (analysis.outliers === 0) {
-    await processProductBatch(items, null, null, targetPx, bgColor, quality);
+    await processProductBatch(items, null, null, targetPx, bgColor, quality, fillPct);
     return;
   }
 
@@ -816,9 +937,9 @@ async function handleProduct(files) {
   const choice = await showDimDialog(analysis, items.length);
 
   if (choice.fit) {
-    await processProductBatch(items, analysis.dominantRatio, choice.fit, targetPx, bgColor, quality);
+    await processProductBatch(items, analysis.dominantRatio, choice.fit, targetPx, bgColor, quality, fillPct);
   } else {
-    await processProductBatch(items, null, null, targetPx, bgColor, quality);
+    await processProductBatch(items, null, null, targetPx, bgColor, quality, fillPct);
   }
 
   } catch (e) {
@@ -827,11 +948,11 @@ async function handleProduct(files) {
   }
 }
 
-async function processProductBatch(items, dominantRatio, fitMode, targetPx, bgColor, quality) {
+async function processProductBatch(items, dominantRatio, fitMode, targetPx, bgColor, quality, fillPct) {
   const files = items.map(it => it.file);
   await zipConvert(files, async (file, i) => {
     const item = items[i];
-    return productConvertItem(item, dominantRatio, fitMode, targetPx, bgColor, quality);
+    return productConvertItem(item, dominantRatio, fitMode, targetPx, bgColor, quality, fillPct);
   }, (file, i, blob) => {
     if (!dominantRatio || !fitMode) return null;
     const r = items[i].cropW / items[i].cropH;
@@ -839,7 +960,7 @@ async function processProductBatch(items, dominantRatio, fitMode, targetPx, bgCo
   });
 }
 
-function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality) {
+function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality, fillPct) {
   const { img, bounds, cropW, cropH } = item;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -854,9 +975,9 @@ function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality
     ctx.fillRect(0, 0, size, size);
   }
 
-  /* Ustal docelowy kadr wewnątrz kwadratu */
-  const margin = Math.round(size * 0.004);
-  const drawArea = size - margin * 2;
+  /* Ustal docelowy kadr wewnątrz kwadratu — fillPct kontroluje wielkość produktu */
+  const fp = fillPct || 0.75;
+  const drawArea = Math.round(size * fp);
 
   const itemRatio = cropW / cropH;
   const needsFit = dominantRatio !== null && fitMode !== null && ratioKey(itemRatio) !== ratioKey(dominantRatio);
@@ -919,12 +1040,12 @@ function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality
 }
 
 /* Stary single (1 zdjęcie) — prosty contain w kwadracie */
-async function productConvertSingle(img, size, bgColor, threshold, quality) {
+async function productConvertSingle(img, size, bgColor, threshold, quality, fillPct) {
   const bounds = await getContentBounds(img, threshold);
   const cropW = bounds.right - bounds.left;
   const cropH = bounds.bottom - bounds.top;
-  const margin = Math.round(size * 0.004);
-  const drawArea = size - margin * 2;
+  const fp = fillPct || 0.75;
+  const drawArea = Math.round(size * fp);
   const scale = Math.min(drawArea / cropW, drawArea / cropH);
   const finalW = cropW * scale;
   const finalH = cropH * scale;
@@ -946,8 +1067,8 @@ async function productConvertSingle(img, size, bgColor, threshold, quality) {
 }
 
 async function getContentBounds(img, threshold) {
-  const origW = img.naturalWidth;
-  const origH = img.naturalHeight;
+  const origW = img.naturalWidth || img.width;
+  const origH = img.naturalHeight || img.height;
 
   /* Przeskaluj do max 400px — mniejsze = szybsze */
   const MAX_ANALYSIS = 400;
