@@ -531,8 +531,8 @@ h1 {
       </div>
       <div class="opt-row">
         <label for="fill-pct">Wypełnienie kadru:</label>
-        <input type="range" id="fill-pct" min="50" max="100" value="75">
-        <span id="fill-pct-val">75%</span>
+        <input type="range" id="fill-pct" min="50" max="100" value="85">
+        <span id="fill-pct-val">85%</span>
       </div>
       <div class="opt-row">
         <label>Transformacja:</label>
@@ -1076,7 +1076,7 @@ function productConvertItem(item, dominantRatio, fitMode, size, bgColor, quality
   }
 
   /* Ustal docelowy kadr wewnątrz kwadratu — fillPct kontroluje wielkość produktu */
-  const fp = fillPct || 0.75;
+  const fp = fillPct || 0.85;
   const drawArea = Math.round(size * fp);
 
   const itemRatio = cropW / cropH;
@@ -1144,7 +1144,7 @@ async function productConvertSingle(img, size, bgColor, threshold, quality, fill
   const bounds = await getContentBounds(img, threshold);
   const cropW = bounds.right - bounds.left;
   const cropH = bounds.bottom - bounds.top;
-  const fp = fillPct || 0.75;
+  const fp = fillPct || 0.85;
   const drawArea = Math.round(size * fp);
   const scale = Math.min(drawArea / cropW, drawArea / cropH);
   const finalW = cropW * scale;
