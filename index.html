@@ -597,6 +597,8 @@ const modeOpts = document.querySelectorAll('.mode-opts');
 let currentMode = 'convert';
 let selectedFit = 'contain';
 let pendingFiles = null;
+let loadedImages = [];  /* {file, img} — załadowane Image objects do podglądu product */
+let previewTimer = null;
 const btnConvert = $('btn-convert');
 
 /* ── Globalny licznik przetworzonych obrazków (Abacus API) ── */
@@ -707,7 +709,11 @@ function setupTransformBar(barId, mode) {
       });
       /* Aktualizuj podgląd na żywo */
       if (preview.classList.contains('preview-phase')) {
-        updatePreviewTransform();
+        if (currentMode === 'product' && loadedImages.length > 0) {
+          debouncedProductPreview();
+        } else {
+          updatePreviewTransform();
+        }
       } else {
         settingsChanged();
       }
@@ -772,6 +778,8 @@ function resetUI() {
   dimDialog.style.display = 'none';
   btnConvert.style.display = 'none';
   pendingFiles = null;
+  loadedImages = [];
+  clearTimeout(previewTimer);
 }
 
 /* ── Router trybów ── */
@@ -784,21 +792,39 @@ function route(fileList) {
 }
 
 /* ── Podgląd z transformacją na żywo ── */
-function showPreview(files) {
+async function showPreview(files) {
   pendingFiles = files;
   preview.classList.add('preview-phase');
-  for (const file of files) {
-    const d = document.createElement('div');
-    d.className = 'thumb';
-    const url = URL.createObjectURL(file);
-    d.innerHTML = `<img src="${url}"><div class="info"><div class="name">${esc(file.name)}</div></div>`;
-    preview.appendChild(d);
+
+  if (currentMode === 'product') {
+    /* Tryb product — ładuj obrazki i renderuj canvas preview z autocropem */
+    loadedImages = [];
+    status.textContent = `Ładuję ${files.length} plików...`;
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const img = await loadImg(files[i]);
+        loadedImages.push({ file: files[i], img });
+      } catch (e) {
+        /* pomijamy uszkodzone pliki */
+      }
+    }
+    await renderProductPreview();
+  } else {
+    /* Tryb desc — proste miniatury z CSS transform */
+    for (const file of files) {
+      const d = document.createElement('div');
+      d.className = 'thumb';
+      const url = URL.createObjectURL(file);
+      d.innerHTML = `<img src="${url}"><div class="info"><div class="name">${esc(file.name)}</div></div>`;
+      preview.appendChild(d);
+    }
+    btnConvert.style.display = 'block';
+    status.textContent = `${files.length} ${files.length === 1 ? 'plik' : 'plików'} — ustaw transformację i kliknij Konwertuj`;
+    updatePreviewTransform();
   }
-  btnConvert.style.display = 'block';
-  status.textContent = `${files.length} ${files.length === 1 ? 'plik' : 'plików'} — ustaw transformację i kliknij Konwertuj`;
-  updatePreviewTransform();
 }
 
+/* Podgląd CSS dla trybu desc */
 function updatePreviewTransform() {
   const t = transforms[currentMode];
   if (!t) return;
@@ -810,6 +836,80 @@ function updatePreviewTransform() {
   preview.querySelectorAll('.thumb img').forEach(img => {
     img.style.transform = css;
   });
+}
+
+/* Podgląd canvas dla trybu product — autocrop + kwadrat + fillPct */
+let previewGeneration = 0;
+async function renderProductPreview() {
+  const gen = ++previewGeneration;
+  const thresh = parseInt(thresholdSlider.value);
+  const fp = parseInt(fillPctSlider.value) / 100;
+  const bgColor = $('bg-color').value;
+  const tState = transforms.product;
+  const SIZE = 300;
+
+  preview.innerHTML = '';
+  status.textContent = 'Generuję podgląd...';
+
+  for (let i = 0; i < loadedImages.length; i++) {
+    if (gen !== previewGeneration) return; /* przerwano — nowy render w toku */
+    const { file, img } = loadedImages[i];
+
+    /* Transform */
+    let src = applyTransform(img, tState) || img;
+    const srcW = src.naturalWidth || src.width;
+    const srcH = src.naturalHeight || src.height;
+
+    /* Autocrop */
+    const bounds = await getContentBounds(src, thresh);
+    if (gen !== previewGeneration) return;
+    const cropW = bounds.right - bounds.left;
+    const cropH = bounds.bottom - bounds.top;
+
+    /* Rysuj kwadrat preview */
+    const c = document.createElement('canvas');
+    c.width = SIZE;
+    c.height = SIZE;
+    const ctx = c.getContext('2d');
+    if (bgColor === 'transparent') {
+      /* Szachownica dla przezroczystego tła */
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.fillStyle = '#2a2a2a';
+      for (let y = 0; y < SIZE; y += 20) for (let x = 0; x < SIZE; x += 20) {
+        if ((x / 20 + y / 20) % 2) ctx.fillRect(x, y, 20, 20);
+      }
+    } else {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, SIZE, SIZE);
+    }
+
+    const drawArea = Math.round(SIZE * fp);
+    const scale = Math.min(drawArea / cropW, drawArea / cropH);
+    const fw = cropW * scale;
+    const fh = cropH * scale;
+    const px = (SIZE - fw) / 2;
+    const py = (SIZE - fh) / 2;
+    ctx.drawImage(src, bounds.left, bounds.top, cropW, cropH, px, py, fw, fh);
+
+    /* Thumb */
+    const d = document.createElement('div');
+    d.className = 'thumb';
+    const dataUrl = c.toDataURL('image/png');
+    d.innerHTML = `<img src="${dataUrl}"><div class="info"><div class="name">${esc(file.name)}</div></div>`;
+    preview.appendChild(d);
+    await tick();
+  }
+
+  btnConvert.style.display = 'block';
+  if (gen === previewGeneration) {
+    status.textContent = `${loadedImages.length} ${loadedImages.length === 1 ? 'plik' : 'plików'} — kliknij Konwertuj`;
+  }
+}
+
+function debouncedProductPreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(renderProductPreview, 200);
 }
 
 /* ── Przycisk Konwertuj ── */
@@ -828,9 +928,13 @@ btnConvert.addEventListener('click', () => {
 /* ── Powrót do podglądu po zmianie ustawień ── */
 function settingsChanged() {
   if (!pendingFiles || currentMode === 'convert') return;
-  /* Jeśli już w fazie podglądu — wystarczy pokazać przycisk */
   if (preview.classList.contains('preview-phase')) {
-    btnConvert.style.display = 'block';
+    /* Product: przerenderuj canvas preview z nowymi ustawieniami */
+    if (currentMode === 'product' && loadedImages.length > 0) {
+      debouncedProductPreview();
+    } else {
+      btnConvert.style.display = 'block';
+    }
     return;
   }
   /* Wróć z fazy wyników do podglądu */
