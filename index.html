@@ -673,11 +673,17 @@ tabs.forEach(tab => {
 });
 
 /* ── Suwaki ── */
-qualitySlider.addEventListener('input', () => qualityVal.textContent = qualitySlider.value + '%');
-thresholdSlider.addEventListener('input', () => thresholdVal.textContent = thresholdSlider.value);
+qualitySlider.addEventListener('input', () => { qualityVal.textContent = qualitySlider.value + '%'; settingsChanged(); });
+thresholdSlider.addEventListener('input', () => { thresholdVal.textContent = thresholdSlider.value; settingsChanged(); });
 const fillPctSlider = $('fill-pct');
 const fillPctVal = $('fill-pct-val');
-fillPctSlider.addEventListener('input', () => fillPctVal.textContent = fillPctSlider.value + '%');
+fillPctSlider.addEventListener('input', () => { fillPctVal.textContent = fillPctSlider.value + '%'; settingsChanged(); });
+
+/* Inputy numeryczne i selecty — zmiana ustawień */
+$('max-width').addEventListener('change', settingsChanged);
+$('max-kb').addEventListener('change', settingsChanged);
+$('target-size').addEventListener('change', settingsChanged);
+$('bg-color').addEventListener('change', settingsChanged);
 
 /* ── Transformacja (obrót + odbicie) ── */
 /* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
@@ -700,7 +706,11 @@ function setupTransformBar(barId, mode) {
         else if (a === 'flipV') b.classList.toggle('active', t.flipV);
       });
       /* Aktualizuj podgląd na żywo */
-      updatePreviewTransform();
+      if (preview.classList.contains('preview-phase')) {
+        updatePreviewTransform();
+      } else {
+        settingsChanged();
+      }
     });
   });
 }
@@ -806,7 +816,7 @@ function updatePreviewTransform() {
 btnConvert.addEventListener('click', () => {
   if (!pendingFiles) return;
   const files = pendingFiles;
-  pendingFiles = null;
+  /* NIE kasujemy pendingFiles — zostają do ponownej konwersji */
   btnConvert.style.display = 'none';
   preview.innerHTML = '';
   preview.classList.remove('preview-phase');
@@ -814,6 +824,21 @@ btnConvert.addEventListener('click', () => {
   if (currentMode === 'desc') handleDesc(files);
   else if (currentMode === 'product') handleProduct(files);
 });
+
+/* ── Powrót do podglądu po zmianie ustawień ── */
+function settingsChanged() {
+  if (!pendingFiles || currentMode === 'convert') return;
+  /* Jeśli już w fazie podglądu — wystarczy pokazać przycisk */
+  if (preview.classList.contains('preview-phase')) {
+    btnConvert.style.display = 'block';
+    return;
+  }
+  /* Wróć z fazy wyników do podglądu */
+  preview.innerHTML = '';
+  dimDialog.style.display = 'none';
+  showPreview(pendingFiles);
+  status.textContent = 'Ustawienia zmienione — kliknij Konwertuj';
+}
 
 /* ══════════════════════════════════════════════
    TRYB 1: Prosta konwersja
