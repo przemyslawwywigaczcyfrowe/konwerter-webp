@@ -1245,10 +1245,13 @@ function showDimDialog(analysis, totalCount) {
 /* ══════════════════════════════════════════════
    Wspólne narzędzia
    ══════════════════════════════════════════════ */
-/* Zamiana rozszerzenia na .webp (obrazek.png → obrazek.webp) */
+/* Zamiana rozszerzenia na .webp + polskie znaki → ASCII */
+const PL_MAP = {'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z','Ą':'A','Ć':'C','Ę':'E','Ł':'L','Ń':'N','Ó':'O','Ś':'S','Ź':'Z','Ż':'Z'};
+function dePL(s) { return s.replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, ch => PL_MAP[ch]); }
 function swapExt(name) {
   const dot = name.lastIndexOf('.');
-  return (dot > 0 ? name.substring(0, dot) : name) + '.webp';
+  const base = dot > 0 ? name.substring(0, dot) : name;
+  return dePL(base) + '.webp';
 }
 
 /* Mikro-pauza — pozwala przeglądarce odmalować UI */
