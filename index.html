@@ -917,6 +917,26 @@ async function renderDescPreview() {
   preview.innerHTML = '';
   status.textContent = 'Generuję podgląd...';
 
+  /* Auto-height: gdy brak jawnej wysokości i ≥2 zdjęć, wyrównaj do najkrótszego */
+  let effectiveH = descH;
+  let autoDetected = false;
+  if (descH === 0 && loadedImages.length >= 2) {
+    const swapped = (tState.rot === 90 || tState.rot === 270);
+    const heights = loadedImages.map(({ img }) => {
+      const ow = img.naturalWidth || img.width;
+      const oh = img.naturalHeight || img.height;
+      const sw = swapped ? oh : ow;
+      const sh = swapped ? ow : oh;
+      return Math.round(maxW * (sh / sw));
+    });
+    const minH = Math.min(...heights);
+    const maxH = Math.max(...heights);
+    if (minH > 0 && maxH / minH <= 1.15) {
+      effectiveH = minH;
+      autoDetected = true;
+    }
+  }
+
   for (let i = 0; i < loadedImages.length; i++) {
     if (gen !== previewGeneration) return;
     const { file, img } = loadedImages[i];
@@ -927,9 +947,9 @@ async function renderDescPreview() {
 
     /* Oblicz docelowe wymiary */
     let targetW, targetH;
-    if (descH > 0) {
+    if (effectiveH > 0) {
       targetW = maxW;
-      targetH = descH;
+      targetH = effectiveH;
     } else {
       targetW = Math.min(srcW, maxW);
       targetH = Math.round(targetW * (srcH / srcW));
@@ -945,7 +965,7 @@ async function renderDescPreview() {
     c.height = prevH;
     const ctx = c.getContext('2d');
 
-    if (descH > 0) {
+    if (effectiveH > 0) {
       /* Center crop (cover) do dokładnych wymiarów */
       const scale = Math.max(targetW / srcW, targetH / srcH);
       const sw = srcW * scale;
@@ -969,7 +989,11 @@ async function renderDescPreview() {
 
   btnConvert.style.display = 'block';
   if (gen === previewGeneration) {
-    status.textContent = `${loadedImages.length} ${loadedImages.length === 1 ? 'plik' : 'plików'} — kliknij Konwertuj`;
+    if (autoDetected) {
+      status.textContent = `${loadedImages.length} plików — wyrównano do ${maxW}\u00d7${effectiveH} — kliknij Konwertuj`;
+    } else {
+      status.textContent = `${loadedImages.length} ${loadedImages.length === 1 ? 'plik' : 'plików'} — kliknij Konwertuj`;
+    }
   }
 }
 
@@ -1062,6 +1086,18 @@ async function handleDesc(files) {
   if (descH > 0) {
     await processDescBatch(loaded, maxW, descH, maxKB, quality, null);
     return;
+  }
+
+  /* Auto-height: wyrównaj do najkrótszego gdy podobne wysokości */
+  if (loaded.length >= 2) {
+    const heights = loaded.map(l => Math.round(maxW * (l.h / l.w)));
+    const minH = Math.min(...heights);
+    const maxH = Math.max(...heights);
+    if (minH > 0 && maxH / minH <= 1.15) {
+      status.textContent = `Wyrównuję wysokość do ${minH}px...`;
+      await processDescBatch(loaded, maxW, minH, maxKB, quality, null);
+      return;
+    }
   }
 
   /* Jedno zdjęcie — prosto konwertuj */
