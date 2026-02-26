@@ -292,6 +292,25 @@ h1 {
   color: #5fd67b;
   background: rgba(40,167,69,.08);
 }
+/* Per-image vertical crop frame */
+.crop-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.crop-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 0;
+  border-radius: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.crop-frame.draggable {
+  cursor: ns-resize;
+}
 
 /* ── Dialog (proporcje / wymiary) ── */
 .dialog-box {
@@ -557,11 +576,9 @@ h1 {
         </div>
       </div>
       <div class="opt-row">
-        <label>Skalowanie:</label>
-        <div class="fit-mode-bar" id="fit-mode-desc">
-          <button type="button" data-fit="cover" class="active" title="Wypełnij kadr, przytnij nadmiar">◨ Cover</button>
-          <button type="button" data-fit="stretch" title="Rozciągnij do wymiarów">↔ Stretch</button>
-        </div>
+        <label>Kadrowanie pionu:</label>
+        <input type="range" id="desc-crop-y" min="0" max="100" value="50">
+        <span id="desc-crop-y-val">środek</span>
       </div>
     </div>
 
@@ -745,8 +762,8 @@ $('bg-color').addEventListener('change', settingsChanged);
 /* ── Transformacja (obrót + odbicie) ── */
 /* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
 const transforms = { desc: { rot: 0, flipH: false, flipV: false }, product: { rot: 0, flipH: false, flipV: false } };
-let descFitMode = 'cover';
-let imageFitModes = new Map();
+let descCropY = 0.5;
+let imageCropY = new Map();
 
 function setupTransformBar(barId, mode) {
   const bar = $(barId);
@@ -778,15 +795,26 @@ function setupTransformBar(barId, mode) {
 setupTransformBar('transform-desc', 'desc');
 setupTransformBar('transform-product', 'product');
 
-/* ── Fit mode (Opis na stronę) ── */
-$('fit-mode-desc').querySelectorAll('button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    $('fit-mode-desc').querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    descFitMode = btn.dataset.fit;
-    imageFitModes.clear();
+/* ── Kadrowanie pionu (Opis na stronę) ── */
+const descCropYSlider = $('desc-crop-y');
+const descCropYValEl = $('desc-crop-y-val');
+function descCropYLabel(v) { return v == 0 ? 'góra' : v == 50 ? 'środek' : v == 100 ? 'dół' : v + '%'; }
+descCropYSlider.addEventListener('input', () => {
+  const v = parseInt(descCropYSlider.value);
+  descCropYValEl.textContent = descCropYLabel(v);
+  descCropY = v / 100;
+  imageCropY.clear();
+  if (preview.classList.contains('preview-phase') && loadedImages.length > 0) {
+    preview.querySelectorAll('.thumb').forEach(thumb => {
+      const excess = parseFloat(thumb.dataset.excess || 0);
+      const imgEl = thumb.querySelector('.crop-frame img');
+      if (imgEl && excess > 0) {
+        imgEl.style.transform = `translateY(${Math.round(-excess * descCropY)}px)`;
+      }
+    });
+  } else {
     settingsChanged();
-  });
+  }
 });
 
 /* Pomocnicza: aplikuj transformację na canvas.
@@ -845,7 +873,7 @@ function resetUI() {
   btnConvert.style.display = 'none';
   pendingFiles = null;
   loadedImages = [];
-  imageFitModes.clear();
+  imageCropY.clear();
   clearTimeout(previewTimer);
 }
 
@@ -1015,45 +1043,49 @@ async function renderDescPreview() {
     const prevW = Math.max(1, Math.round(targetW * prevScale));
     const prevH = Math.max(1, Math.round(targetH * prevScale));
 
+    /* Pełna wysokość po skalowaniu do targetW */
+    const scaledH = Math.round(srcH * (targetW / srcW));
+    const fullPrevH = Math.max(1, Math.round(scaledH * prevScale));
+    const excess = Math.max(0, fullPrevH - prevH);
+
     const c = document.createElement('canvas');
     c.width = prevW;
-    c.height = prevH;
+    c.height = fullPrevH;
     const ctx = c.getContext('2d');
+    ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, fullPrevH);
 
-    if (effectiveW > 0 && effectiveH > 0) {
-      const fit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
-      if (fit === 'stretch') {
-        ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, prevH);
-      } else { /* cover — domyślny, bez białych pasów */
-        const scale = Math.max(targetW / srcW, targetH / srcH);
-        const sw = srcW * scale, sh = srcH * scale;
-        const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
-        ctx.drawImage(src, 0, 0, srcW, srcH, ox * prevScale, oy * prevScale, sw * prevScale, sh * prevScale);
-      }
-    } else {
-      ctx.drawImage(src, 0, 0, prevW, prevH);
-    }
+    const cropY = imageCropY.has(i) ? imageCropY.get(i) : descCropY;
+    const translateY = Math.round(-excess * cropY);
 
     const changed = (srcW !== targetW || srcH !== targetH);
     const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${targetW}\u00d7${targetH}` : `${targetW}\u00d7${targetH}`;
-    const curFit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
-    const fitBtnsHtml = (effectiveW > 0 && effectiveH > 0) ? `<div class="fit-btns">${
-      ['cover','stretch'].map(f => {
-        const icons = {cover:'\u25e8',stretch:'\u2194'};
-        return `<button data-fit="${f}" data-idx="${i}" class="${f === curFit ? 'active' : ''}" title="${f[0].toUpperCase()+f.slice(1)}">${icons[f]}</button>`;
-      }).join('')
-    }</div>` : '';
     const d = document.createElement('div');
     d.className = 'thumb';
-    d.innerHTML = `<img src="${c.toDataURL('image/png')}">${fitBtnsHtml}<div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
+    d.dataset.idx = i;
+    d.dataset.excess = excess;
+    d.innerHTML = `<div class="crop-frame${excess > 0 ? ' draggable' : ''}" style="height:${prevH}px"><img src="${c.toDataURL('image/png')}" style="transform:translateY(${translateY}px)" draggable="false"></div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
     preview.appendChild(d);
-    d.querySelectorAll('.fit-btns button').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        imageFitModes.set(parseInt(btn.dataset.idx), btn.dataset.fit);
-        debouncedPreview();
+    if (excess > 0) {
+      const imgEl = d.querySelector('.crop-frame img');
+      imgEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        imgEl.setPointerCapture(e.pointerId);
+        const startY = e.clientY;
+        const startCropY = imageCropY.has(i) ? imageCropY.get(i) : descCropY;
+        const onMove = (e2) => {
+          const dy = e2.clientY - startY;
+          const newCropY = Math.max(0, Math.min(1, startCropY - dy / excess));
+          imageCropY.set(i, newCropY);
+          imgEl.style.transform = `translateY(${Math.round(-excess * newCropY)}px)`;
+        };
+        const onUp = () => {
+          imgEl.removeEventListener('pointermove', onMove);
+          imgEl.removeEventListener('pointerup', onUp);
+        };
+        imgEl.addEventListener('pointermove', onMove);
+        imgEl.addEventListener('pointerup', onUp);
       });
-    });
+    }
     await tick();
   }
 
@@ -1150,7 +1182,7 @@ async function handleDesc(files) {
   /* Jedno zdjęcie — konwertuj bez zmian */
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY, descFitMode);
+    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY, descCropY);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1164,14 +1196,14 @@ async function handleDesc(files) {
   const minH = Math.min(...heights);
 
   status.textContent = `Wyrównuję do ${minW}\u00d7${minH}px...`;
-  const fitModes = loaded.map((_, i) => imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode);
-  await processDescBatch(loaded, minW, minH, QUALITY, fitModes);
+  const cropYs = loaded.map((_, i) => imageCropY.has(i) ? imageCropY.get(i) : descCropY);
+  await processDescBatch(loaded, minW, minH, QUALITY, cropYs);
 }
 
-async function processDescBatch(loaded, targetW, targetH, quality, fitModes) {
+async function processDescBatch(loaded, targetW, targetH, quality, cropYs) {
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], targetW, targetH, quality, fitModes[0]);
+    const blob = await descConvertOne(loaded[0], targetW, targetH, quality, cropYs[0]);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1179,11 +1211,11 @@ async function processDescBatch(loaded, targetW, targetH, quality, fitModes) {
     return;
   }
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
-    return descConvertOne(loaded[i], targetW, targetH, quality, fitModes[i]);
+    return descConvertOne(loaded[i], targetW, targetH, quality, cropYs[i]);
   });
 }
 
-async function descConvertOne(item, targetW, targetH, quality, fitMode) {
+async function descConvertOne(item, targetW, targetH, quality, cropY) {
   const { img, w, h } = item;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -1191,15 +1223,11 @@ async function descConvertOne(item, targetW, targetH, quality, fitMode) {
   if (targetW > 0 && targetH > 0) {
     canvas.width = targetW;
     canvas.height = targetH;
-    const fit = fitMode || 'cover';
-    if (fit === 'stretch') {
-      ctx.drawImage(img, 0, 0, targetW, targetH);
-    } else { /* cover — domyślny, bez białych pasów */
-      const s = Math.max(targetW / w, targetH / h);
-      const sw = w * s, sh = h * s;
-      const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
-      ctx.drawImage(img, ox, oy, sw, sh);
-    }
+    /* Skaluj do targetW, kadruj w pionie wg cropY */
+    const scaledH = h * (targetW / w);
+    const excess = scaledH - targetH;
+    const offsetY = -excess * (cropY != null ? cropY : 0.5);
+    ctx.drawImage(img, 0, 0, w, h, 0, offsetY, targetW, scaledH);
   } else {
     canvas.width = w;
     canvas.height = h;
