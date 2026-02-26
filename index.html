@@ -1123,7 +1123,7 @@ function settingsChanged() {
    TRYB 1: Prosta konwersja
    ══════════════════════════════════════════════ */
 async function handleConvert(files) {
-  const quality = 0.85;
+  const quality = 0.92;
   if (files.length === 1) {
     status.textContent = 'Konwertuję...';
     try {
@@ -1159,7 +1159,7 @@ async function handleDesc(files) {
     loaded.push({ file: files[i], img, w, h });
   }
 
-  const QUALITY = 0.85;
+  const QUALITY = 0.92;
 
   /* Jedno zdjęcie — konwertuj bez zmian */
   if (loaded.length === 1) {
@@ -1245,7 +1245,7 @@ async function handleProduct(files) {
   try {
   const tState = transforms.product;
   const thresh = parseInt(thresholdSlider.value);
-  const quality = 0.85;
+  const quality = 0.92;
   const bgColor = $('bg-color').value;
   const targetW = parseInt($('product-width').value) || 1300;
   const targetH = parseInt($('product-height').value) || 1300;
