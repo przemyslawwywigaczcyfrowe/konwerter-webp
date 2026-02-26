@@ -559,10 +559,8 @@ h1 {
       <div class="opt-row">
         <label>Skalowanie:</label>
         <div class="fit-mode-bar" id="fit-mode-desc">
-          <button type="button" data-fit="contain" class="active" title="Zmieść całość w kadrze">▢ Contain</button>
-          <button type="button" data-fit="cover" title="Wypełnij kadr, przytnij nadmiar">◨ Cover</button>
+          <button type="button" data-fit="cover" class="active" title="Wypełnij kadr, przytnij nadmiar">◨ Cover</button>
           <button type="button" data-fit="stretch" title="Rozciągnij do wymiarów">↔ Stretch</button>
-          <button type="button" data-fit="smart" title="Inteligentne dopasowanie">◇ Smart</button>
         </div>
       </div>
     </div>
@@ -747,7 +745,7 @@ $('bg-color').addEventListener('change', settingsChanged);
 /* ── Transformacja (obrót + odbicie) ── */
 /* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
 const transforms = { desc: { rot: 0, flipH: false, flipV: false }, product: { rot: 0, flipH: false, flipV: false } };
-let descFitMode = 'contain';
+let descFitMode = 'cover';
 let imageFitModes = new Map();
 
 function setupTransformBar(barId, mode) {
@@ -1023,26 +1021,14 @@ async function renderDescPreview() {
     const ctx = c.getContext('2d');
 
     if (effectiveW > 0 && effectiveH > 0) {
-      let fit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
-      if (fit === 'smart') {
-        const cs = Math.max(targetW / srcW, targetH / srcH);
-        const vis = (targetW * targetH) / (srcW * cs * srcH * cs);
-        fit = vis < 0.85 ? 'contain' : 'cover';
-      }
-      if (fit === 'contain') {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, prevW, prevH);
-        const scale = Math.min(targetW / srcW, targetH / srcH);
-        const sw = srcW * scale, sh = srcH * scale;
-        const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
-        ctx.drawImage(src, 0, 0, srcW, srcH, ox * prevScale, oy * prevScale, sw * prevScale, sh * prevScale);
-      } else if (fit === 'cover') {
+      const fit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
+      if (fit === 'stretch') {
+        ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, prevH);
+      } else { /* cover — domyślny, bez białych pasów */
         const scale = Math.max(targetW / srcW, targetH / srcH);
         const sw = srcW * scale, sh = srcH * scale;
         const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
         ctx.drawImage(src, 0, 0, srcW, srcH, ox * prevScale, oy * prevScale, sw * prevScale, sh * prevScale);
-      } else { /* stretch */
-        ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, prevH);
       }
     } else {
       ctx.drawImage(src, 0, 0, prevW, prevH);
@@ -1052,8 +1038,8 @@ async function renderDescPreview() {
     const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${targetW}\u00d7${targetH}` : `${targetW}\u00d7${targetH}`;
     const curFit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
     const fitBtnsHtml = (effectiveW > 0 && effectiveH > 0) ? `<div class="fit-btns">${
-      ['contain','cover','stretch','smart'].map(f => {
-        const icons = {contain:'\u25a2',cover:'\u25e8',stretch:'\u2194',smart:'\u25c7'};
+      ['cover','stretch'].map(f => {
+        const icons = {cover:'\u25e8',stretch:'\u2194'};
         return `<button data-fit="${f}" data-idx="${i}" class="${f === curFit ? 'active' : ''}" title="${f[0].toUpperCase()+f.slice(1)}">${icons[f]}</button>`;
       }).join('')
     }</div>` : '';
@@ -1205,26 +1191,14 @@ async function descConvertOne(item, targetW, targetH, quality, fitMode) {
   if (targetW > 0 && targetH > 0) {
     canvas.width = targetW;
     canvas.height = targetH;
-    let fit = fitMode || 'cover';
-    if (fit === 'smart') {
-      const cs = Math.max(targetW / w, targetH / h);
-      const vis = (targetW * targetH) / (w * cs * h * cs);
-      fit = vis < 0.85 ? 'contain' : 'cover';
-    }
-    if (fit === 'contain') {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, targetW, targetH);
-      const s = Math.min(targetW / w, targetH / h);
-      const sw = w * s, sh = h * s;
-      const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
-      ctx.drawImage(img, ox, oy, sw, sh);
-    } else if (fit === 'cover') {
+    const fit = fitMode || 'cover';
+    if (fit === 'stretch') {
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+    } else { /* cover — domyślny, bez białych pasów */
       const s = Math.max(targetW / w, targetH / h);
       const sw = w * s, sh = h * s;
       const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
       ctx.drawImage(img, ox, oy, sw, sh);
-    } else { /* stretch */
-      ctx.drawImage(img, 0, 0, targetW, targetH);
     }
   } else {
     canvas.width = w;
