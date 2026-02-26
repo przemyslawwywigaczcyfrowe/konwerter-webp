@@ -230,6 +230,68 @@ h1 {
   background: #2a2a2a;
   margin: 0 .15rem;
 }
+/* ── Fit mode bar ── */
+.fit-mode-bar {
+  display: flex;
+  gap: 2px;
+  background: #0e0e0e;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 2px;
+}
+.fit-mode-bar button {
+  padding: .35rem .55rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #666;
+  font-size: .68rem;
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.fit-mode-bar button:hover {
+  color: #aaa;
+  background: rgba(255,255,255,.03);
+}
+.fit-mode-bar button.active {
+  border-color: #28a745;
+  color: #5fd67b;
+  background: rgba(40,167,69,.08);
+}
+/* Per-image fit buttons in thumbnails */
+.fit-btns {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  margin: 4px 0 2px;
+}
+.fit-btns button {
+  width: 1.55rem;
+  height: 1.55rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  color: #555;
+  font-size: .6rem;
+  cursor: pointer;
+  padding: 0;
+  transition: all .15s ease;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fit-btns button:hover {
+  color: #aaa;
+  border-color: #3a3a3a;
+}
+.fit-btns button.active {
+  border-color: #28a745;
+  color: #5fd67b;
+  background: rgba(40,167,69,.08);
+}
 
 /* ── Dialog (proporcje / wymiary) ── */
 .dialog-box {
@@ -482,12 +544,6 @@ h1 {
 
   <!-- Opcje wspólne -->
   <div class="options">
-    <div class="opt-row" id="quality-row">
-      <label for="quality">Jakość:</label>
-      <input type="range" id="quality" min="1" max="100" value="80">
-      <span id="quality-val">80%</span>
-    </div>
-
     <!-- Opcje trybu "Opis na stronę" -->
     <div class="mode-opts" data-for="desc" style="display:none">
       <div class="opt-row">
@@ -498,6 +554,15 @@ h1 {
           <span class="sep"></span>
           <button type="button" data-action="flipH" title="Odbij w poziomie">⇔</button>
           <button type="button" data-action="flipV" title="Odbij w pionie">⇕</button>
+        </div>
+      </div>
+      <div class="opt-row">
+        <label>Skalowanie:</label>
+        <div class="fit-mode-bar" id="fit-mode-desc">
+          <button type="button" data-fit="contain" class="active" title="Zmieść całość w kadrze">▢ Contain</button>
+          <button type="button" data-fit="cover" title="Wypełnij kadr, przytnij nadmiar">◨ Cover</button>
+          <button type="button" data-fit="stretch" title="Rozciągnij do wymiarów">↔ Stretch</button>
+          <button type="button" data-fit="smart" title="Inteligentne dopasowanie">◇ Smart</button>
         </div>
       </div>
     </div>
@@ -580,8 +645,6 @@ h1 {
 const $ = id => document.getElementById(id);
 const dropZone = $('drop-zone');
 const fileInput = $('file-input');
-const qualitySlider = $('quality');
-const qualityVal = $('quality-val');
 const thresholdSlider = $('threshold');
 const thresholdVal = $('threshold-val');
 const status = $('status');
@@ -666,13 +729,11 @@ tabs.forEach(tab => {
     tab.classList.add('active');
     currentMode = tab.dataset.mode;
     modeOpts.forEach(o => o.style.display = o.dataset.for === currentMode ? '' : 'none');
-    $('quality-row').style.display = currentMode === 'desc' ? 'none' : '';
     resetUI();
   });
 });
 
 /* ── Suwaki ── */
-qualitySlider.addEventListener('input', () => { qualityVal.textContent = qualitySlider.value + '%'; settingsChanged(); });
 thresholdSlider.addEventListener('input', () => { thresholdVal.textContent = thresholdSlider.value; settingsChanged(); });
 const fillPctSlider = $('fill-pct');
 const fillPctVal = $('fill-pct-val');
@@ -686,6 +747,8 @@ $('bg-color').addEventListener('change', settingsChanged);
 /* ── Transformacja (obrót + odbicie) ── */
 /* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
 const transforms = { desc: { rot: 0, flipH: false, flipV: false }, product: { rot: 0, flipH: false, flipV: false } };
+let descFitMode = 'contain';
+let imageFitModes = new Map();
 
 function setupTransformBar(barId, mode) {
   const bar = $(barId);
@@ -716,6 +779,17 @@ function setupTransformBar(barId, mode) {
 }
 setupTransformBar('transform-desc', 'desc');
 setupTransformBar('transform-product', 'product');
+
+/* ── Fit mode (Opis na stronę) ── */
+$('fit-mode-desc').querySelectorAll('button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $('fit-mode-desc').querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    descFitMode = btn.dataset.fit;
+    imageFitModes.clear();
+    settingsChanged();
+  });
+});
 
 /* Pomocnicza: aplikuj transformację na canvas.
    Przyjmuje img (lub canvas), zwraca nowy canvas z obróconym/odbitym obrazem. */
@@ -773,6 +847,7 @@ function resetUI() {
   btnConvert.style.display = 'none';
   pendingFiles = null;
   loadedImages = [];
+  imageFitModes.clear();
   clearTimeout(previewTimer);
 }
 
@@ -881,7 +956,9 @@ async function renderProductPreview() {
 
     const d = document.createElement('div');
     d.className = 'thumb';
-    d.innerHTML = `<img src="${c.toDataURL('image/png')}"><div class="info"><div class="name">${esc(file.name)}</div></div>`;
+    const origW = img.naturalWidth || img.width;
+    const origH = img.naturalHeight || img.height;
+    d.innerHTML = `<img src="${c.toDataURL('image/png')}"><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${origW}\u00d7${origH} \u2192 ${targetW}\u00d7${targetH}</div></div>`;
     preview.appendChild(d);
     await tick();
   }
@@ -946,23 +1023,51 @@ async function renderDescPreview() {
     const ctx = c.getContext('2d');
 
     if (effectiveW > 0 && effectiveH > 0) {
-      /* Center crop (cover) do wyrównanych wymiarów */
-      const scale = Math.max(targetW / srcW, targetH / srcH);
-      const sw = srcW * scale;
-      const sh = srcH * scale;
-      const ox = (targetW - sw) / 2;
-      const oy = (targetH - sh) / 2;
-      ctx.drawImage(src, 0, 0, srcW, srcH,
-        ox * prevScale, oy * prevScale,
-        sw * prevScale, sh * prevScale);
+      let fit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
+      if (fit === 'smart') {
+        const cs = Math.max(targetW / srcW, targetH / srcH);
+        const vis = (targetW * targetH) / (srcW * cs * srcH * cs);
+        fit = vis < 0.85 ? 'contain' : 'cover';
+      }
+      if (fit === 'contain') {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, prevW, prevH);
+        const scale = Math.min(targetW / srcW, targetH / srcH);
+        const sw = srcW * scale, sh = srcH * scale;
+        const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
+        ctx.drawImage(src, 0, 0, srcW, srcH, ox * prevScale, oy * prevScale, sw * prevScale, sh * prevScale);
+      } else if (fit === 'cover') {
+        const scale = Math.max(targetW / srcW, targetH / srcH);
+        const sw = srcW * scale, sh = srcH * scale;
+        const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
+        ctx.drawImage(src, 0, 0, srcW, srcH, ox * prevScale, oy * prevScale, sw * prevScale, sh * prevScale);
+      } else { /* stretch */
+        ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, prevH);
+      }
     } else {
       ctx.drawImage(src, 0, 0, prevW, prevH);
     }
 
+    const changed = (srcW !== targetW || srcH !== targetH);
+    const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${targetW}\u00d7${targetH}` : `${targetW}\u00d7${targetH}`;
+    const curFit = imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode;
+    const fitBtnsHtml = (effectiveW > 0 && effectiveH > 0) ? `<div class="fit-btns">${
+      ['contain','cover','stretch','smart'].map(f => {
+        const icons = {contain:'\u25a2',cover:'\u25e8',stretch:'\u2194',smart:'\u25c7'};
+        return `<button data-fit="${f}" data-idx="${i}" class="${f === curFit ? 'active' : ''}" title="${f[0].toUpperCase()+f.slice(1)}">${icons[f]}</button>`;
+      }).join('')
+    }</div>` : '';
     const d = document.createElement('div');
     d.className = 'thumb';
-    d.innerHTML = `<img src="${c.toDataURL('image/png')}"><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${targetW}\u00d7${targetH}</div></div>`;
+    d.innerHTML = `<img src="${c.toDataURL('image/png')}">${fitBtnsHtml}<div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
     preview.appendChild(d);
+    d.querySelectorAll('.fit-btns button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        imageFitModes.set(parseInt(btn.dataset.idx), btn.dataset.fit);
+        debouncedPreview();
+      });
+    });
     await tick();
   }
 
@@ -1018,7 +1123,7 @@ function settingsChanged() {
    TRYB 1: Prosta konwersja
    ══════════════════════════════════════════════ */
 async function handleConvert(files) {
-  const quality = qualitySlider.value / 100;
+  const quality = 0.85;
   if (files.length === 1) {
     status.textContent = 'Konwertuję...';
     try {
@@ -1059,7 +1164,7 @@ async function handleDesc(files) {
   /* Jedno zdjęcie — konwertuj bez zmian */
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY);
+    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY, descFitMode);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1073,13 +1178,14 @@ async function handleDesc(files) {
   const minH = Math.min(...heights);
 
   status.textContent = `Wyrównuję do ${minW}\u00d7${minH}px...`;
-  await processDescBatch(loaded, minW, minH, QUALITY);
+  const fitModes = loaded.map((_, i) => imageFitModes.has(i) ? imageFitModes.get(i) : descFitMode);
+  await processDescBatch(loaded, minW, minH, QUALITY, fitModes);
 }
 
-async function processDescBatch(loaded, targetW, targetH, quality) {
+async function processDescBatch(loaded, targetW, targetH, quality, fitModes) {
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], targetW, targetH, quality);
+    const blob = await descConvertOne(loaded[0], targetW, targetH, quality, fitModes[0]);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1087,26 +1193,40 @@ async function processDescBatch(loaded, targetW, targetH, quality) {
     return;
   }
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
-    return descConvertOne(loaded[i], targetW, targetH, quality);
+    return descConvertOne(loaded[i], targetW, targetH, quality, fitModes[i]);
   });
 }
 
-async function descConvertOne(item, targetW, targetH, quality) {
+async function descConvertOne(item, targetW, targetH, quality, fitMode) {
   const { img, w, h } = item;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
   if (targetW > 0 && targetH > 0) {
-    /* Center crop do wyrównanych wymiarów */
     canvas.width = targetW;
     canvas.height = targetH;
-    const s = Math.max(targetW / w, targetH / h);
-    const sw = w * s, sh = h * s;
-    const ox = (targetW - sw) / 2;
-    const oy = (targetH - sh) / 2;
-    ctx.drawImage(img, ox, oy, sw, sh);
+    let fit = fitMode || 'cover';
+    if (fit === 'smart') {
+      const cs = Math.max(targetW / w, targetH / h);
+      const vis = (targetW * targetH) / (w * cs * h * cs);
+      fit = vis < 0.85 ? 'contain' : 'cover';
+    }
+    if (fit === 'contain') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, targetW, targetH);
+      const s = Math.min(targetW / w, targetH / h);
+      const sw = w * s, sh = h * s;
+      const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
+      ctx.drawImage(img, ox, oy, sw, sh);
+    } else if (fit === 'cover') {
+      const s = Math.max(targetW / w, targetH / h);
+      const sw = w * s, sh = h * s;
+      const ox = (targetW - sw) / 2, oy = (targetH - sh) / 2;
+      ctx.drawImage(img, ox, oy, sw, sh);
+    } else { /* stretch */
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+    }
   } else {
-    /* Bez kadrowania — oryginalny rozmiar */
     canvas.width = w;
     canvas.height = h;
     ctx.drawImage(img, 0, 0);
@@ -1125,7 +1245,7 @@ async function handleProduct(files) {
   try {
   const tState = transforms.product;
   const thresh = parseInt(thresholdSlider.value);
-  const quality = qualitySlider.value / 100;
+  const quality = 0.85;
   const bgColor = $('bg-color').value;
   const targetW = parseInt($('product-width').value) || 1300;
   const targetH = parseInt($('product-height').value) || 1300;
