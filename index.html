@@ -230,10 +230,11 @@ h1 {
   background: #2a2a2a;
   margin: 0 .15rem;
 }
-/* Per-image crop container — full image with overlay */
+/* Per-image crop container — stała ramka-wizjer */
 .crop-container {
   position: relative;
   overflow: hidden;
+  border: 2px dashed rgba(255,255,255,.45);
   border-radius: 6px;
   margin-bottom: 6px;
   cursor: grab;
@@ -244,21 +245,17 @@ h1 {
 }
 .crop-container.no-interact {
   cursor: default;
+  border-style: solid;
+  border-color: rgba(255,255,255,.15);
 }
 .crop-container img {
   display: block;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
-}
-.crop-rect {
-  position: absolute;
-  border: 2px dashed rgba(255,255,255,.6);
-  box-shadow: 0 0 0 9999px rgba(0,0,0,.35);
-  pointer-events: none;
-  z-index: 1;
 }
 
 /* ── Dialog (proporcje / wymiary) ── */
@@ -429,14 +426,13 @@ h1 {
 #preview.preview-phase .thumb img {
   transition: transform .2s ease;
 }
-/* Desc crop mode — duże podglądy, mniej kolumn */
+/* Desc crop mode — 3 kolumny, ramki-wizjery */
 #preview.desc-crop-mode {
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
+  justify-items: center;
 }
 #preview.desc-crop-mode .thumb .crop-container img {
-  width: 100%;
-  height: 100%;
   border-radius: 0;
   margin-bottom: 0;
 }
@@ -940,11 +936,11 @@ async function renderProductPreview() {
   }
 }
 
-/* Podgląd: pełny obraz + ramka kadrowania (crop-rect overlay) */
+/* Podgląd: stała ramka-wizjer, obraz przesuwa się za nią */
 async function renderDescPreview() {
   const gen = ++previewGeneration;
   const tState = transforms.desc;
-  const PREV_MAX = 350;
+  const FRAME_MAX = 250;
 
   preview.innerHTML = '';
   preview.classList.add('desc-crop-mode');
@@ -983,25 +979,28 @@ async function renderDescPreview() {
       tH = srcH;
     }
 
-    /* Preview: skaluj CAŁY obraz do max PREV_MAX */
-    const prevScale = Math.min(1, PREV_MAX / Math.max(srcW, srcH));
-    const imgPrevW = Math.max(1, Math.round(srcW * prevScale));
-    const imgPrevH = Math.max(1, Math.round(srcH * prevScale));
-
     /* Proporcje kadrowania */
     const cRatio = tW / tH;
 
-    /* Zakres ramki crop w pikselach oryginału:
-       max = największy prostokąt cRatio mieszczący się w obrazie
-       min = tW × tH (1:1 piksel, bez skalowania w górę) */
+    /* Rozmiar ramki-wizjera w pikselach ekranowych */
+    let fW, fH;
+    if (cRatio >= 1) {
+      fW = FRAME_MAX; fH = Math.round(FRAME_MAX / cRatio);
+    } else {
+      fH = FRAME_MAX; fW = Math.round(FRAME_MAX * cRatio);
+    }
+
+    /* Zakres kadrowania w pikselach oryginału:
+       max = największy prostokąt cRatio mieszczący się w obrazie (max zoom-out)
+       min = tW × tH (1:1 piksel, max zoom-in, brak upscalingu) */
     let maxCropW, maxCropH;
     if (srcW / srcH > cRatio) {
       maxCropH = srcH; maxCropW = srcH * cRatio;
     } else {
       maxCropW = srcW; maxCropH = srcW / cRatio;
     }
-    const minCropW = tW;
-    const minCropH = tH;
+    const minCropW = Math.min(tW, maxCropW);
+    const minCropH = Math.min(tH, maxCropH);
 
     /* Inicjalizuj lub przywróć stan kadrowania */
     if (!imageViewStates.has(i)) {
@@ -1019,19 +1018,20 @@ async function renderDescPreview() {
     vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, vs.cropX));
     vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, vs.cropY));
 
-    /* Canvas podglądu */
-    const PREVIEW_IMG_MAX = 900;
-    const imgScale = Math.min(1, PREVIEW_IMG_MAX / Math.max(srcW, srcH));
+    /* Canvas podglądu (wysoka rozdzielczość do zoomowania) */
+    const CANVAS_MAX = 900;
+    const canvasScale = Math.min(1, CANVAS_MAX / Math.max(srcW, srcH));
     const c = document.createElement('canvas');
-    c.width = Math.round(srcW * imgScale);
-    c.height = Math.round(srcH * imgScale);
+    c.width = Math.round(srcW * canvasScale);
+    c.height = Math.round(srcH * canvasScale);
     c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
 
-    /* Pozycja ramki crop w px podglądu */
-    const rcL = Math.round(vs.cropX * prevScale);
-    const rcT = Math.round(vs.cropY * prevScale);
-    const rcW = Math.round(vs.cropW * prevScale);
-    const rcH = Math.round(vs.cropH * prevScale);
+    /* Pozycja obrazu w ramce: ds = piksele ekranowe / piksele źródłowe */
+    const ds = fW / vs.cropW;
+    const imgDispW = Math.round(srcW * ds);
+    const imgDispH = Math.round(srcH * ds);
+    const imgL = Math.round(-vs.cropX * ds);
+    const imgT = Math.round(-vs.cropY * ds);
 
     const changed = (srcW !== tW || srcH !== tH);
     const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${tW}\u00d7${tH}` : `${tW}\u00d7${tH}`;
@@ -1040,29 +1040,49 @@ async function renderDescPreview() {
     const d = document.createElement('div');
     d.className = 'thumb';
     d.dataset.idx = i;
-    d.innerHTML = `<div class="crop-container${canInteract ? '' : ' no-interact'}" style="width:${imgPrevW}px;height:${imgPrevH}px"><img src="${c.toDataURL('image/jpeg', 0.85)}" draggable="false">${canInteract ? `<div class="crop-rect" style="left:${rcL}px;top:${rcT}px;width:${rcW}px;height:${rcH}px"></div>` : ''}</div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
+
+    const container = document.createElement('div');
+    container.className = 'crop-container' + (canInteract ? '' : ' no-interact');
+    container.style.width = fW + 'px';
+    container.style.height = fH + 'px';
+
+    const imgEl = document.createElement('img');
+    imgEl.src = c.toDataURL('image/jpeg', 0.85);
+    imgEl.draggable = false;
+    imgEl.style.width = imgDispW + 'px';
+    imgEl.style.height = imgDispH + 'px';
+    imgEl.style.left = imgL + 'px';
+    imgEl.style.top = imgT + 'px';
+    container.appendChild(imgEl);
+
+    const info = document.createElement('div');
+    info.className = 'info';
+    info.innerHTML = `<div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div>`;
+
+    d.appendChild(container);
+    d.appendChild(info);
     preview.appendChild(d);
 
-    /* Interakcja: drag = przesuń ramkę, scroll = zmień rozmiar ramki */
+    /* Interakcja: drag = przesuń obraz za ramką, scroll = zoom */
     if (canInteract) {
-      const container = d.querySelector('.crop-container');
-      const rectEl = container.querySelector('.crop-rect');
 
-      /* ── Drag — przesuń ramkę kadrowania ── */
+      /* ── Drag — przeciągnij obraz wewnątrz ramki ── */
       container.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         container.setPointerCapture(e.pointerId);
         container.classList.add('grabbing');
         const startX = e.clientX, startY = e.clientY;
         const startCX = vs.cropX, startCY = vs.cropY;
+        const curDS = fW / vs.cropW;
 
         const onMove = (e2) => {
-          const dx = (e2.clientX - startX) / prevScale;
-          const dy = (e2.clientY - startY) / prevScale;
-          vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, startCX + dx));
-          vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, startCY + dy));
-          rectEl.style.left = Math.round(vs.cropX * prevScale) + 'px';
-          rectEl.style.top = Math.round(vs.cropY * prevScale) + 'px';
+          /* drag prawo → obraz jedzie w prawo → widzisz lewą stronę → cropX maleje */
+          const dx = (e2.clientX - startX) / curDS;
+          const dy = (e2.clientY - startY) / curDS;
+          vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, startCX - dx));
+          vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, startCY - dy));
+          imgEl.style.left = Math.round(-vs.cropX * curDS) + 'px';
+          imgEl.style.top = Math.round(-vs.cropY * curDS) + 'px';
         };
         const onUp = () => {
           container.classList.remove('grabbing');
@@ -1073,35 +1093,40 @@ async function renderDescPreview() {
         container.addEventListener('pointerup', onUp);
       });
 
-      /* ── Scroll — zmień rozmiar ramki (zoom) ── */
+      /* ── Scroll — zoom w kierunku kursora ── */
       container.addEventListener('wheel', (e) => {
         e.preventDefault();
-        /* scroll down = ramka większa (oddal), scroll up = ramka mniejsza (przybliż) */
-        const factor = e.deltaY > 0 ? 1.1 : 0.9;
+        /* scroll up = przybliż (mniejszy crop), scroll down = oddal (większy crop)
+           minCropW = tW → nie pozwala zejść poniżej docelowej rozdzielczości */
+        const factor = e.deltaY > 0 ? 1.08 : 0.92;
         const newCropW = Math.max(vs.minCropW, Math.min(vs.maxCropW, vs.cropW * factor));
         const newCropH = newCropW / cRatio;
         if (Math.abs(newCropW - vs.cropW) < 0.5) return;
 
-        /* Zoom w kierunku kursora — zachowaj punkt pod kursorem */
+        /* Zoom w kierunku kursora */
         const rect = container.getBoundingClientRect();
-        const mx = (e.clientX - rect.left) / prevScale;
-        const my = (e.clientY - rect.top) / prevScale;
-        const rx = (mx - vs.cropX) / vs.cropW;
-        const ry = (my - vs.cropY) / vs.cropH;
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const oldDS = fW / vs.cropW;
+        const srcMX = vs.cropX + mx / oldDS;
+        const srcMY = vs.cropY + my / oldDS;
 
         vs.cropW = newCropW;
         vs.cropH = newCropH;
-        vs.cropX = mx - rx * vs.cropW;
-        vs.cropY = my - ry * vs.cropH;
+        const newDS = fW / vs.cropW;
+        vs.cropX = srcMX - mx / newDS;
+        vs.cropY = srcMY - my / newDS;
 
         /* Clamp */
         vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, vs.cropX));
         vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, vs.cropY));
 
-        rectEl.style.left = Math.round(vs.cropX * prevScale) + 'px';
-        rectEl.style.top = Math.round(vs.cropY * prevScale) + 'px';
-        rectEl.style.width = Math.round(vs.cropW * prevScale) + 'px';
-        rectEl.style.height = Math.round(vs.cropH * prevScale) + 'px';
+        const newImgW = Math.round(srcW * newDS);
+        const newImgH = Math.round(srcH * newDS);
+        imgEl.style.width = newImgW + 'px';
+        imgEl.style.height = newImgH + 'px';
+        imgEl.style.left = Math.round(-vs.cropX * newDS) + 'px';
+        imgEl.style.top = Math.round(-vs.cropY * newDS) + 'px';
       }, { passive: false });
     }
 
