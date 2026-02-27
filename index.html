@@ -230,24 +230,26 @@ h1 {
   background: #2a2a2a;
   margin: 0 .15rem;
 }
-/* Per-image vertical crop frame */
+/* Per-image crop frame — pan+zoom */
 .crop-frame {
   position: relative;
   overflow: hidden;
   border-radius: 6px;
   margin-bottom: 6px;
+  cursor: grab;
+  background: #111;
+}
+.crop-frame.grabbing {
+  cursor: grabbing;
+}
+.crop-frame.no-interact {
+  cursor: default;
 }
 .crop-frame img {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-bottom: 0;
-  border-radius: 0;
+  position: absolute;
   user-select: none;
   -webkit-user-select: none;
-}
-.crop-frame.draggable {
-  cursor: ns-resize;
+  pointer-events: none;
 }
 
 /* ── Dialog (proporcje / wymiary) ── */
@@ -514,9 +516,9 @@ h1 {
         </div>
       </div>
       <div class="opt-row">
-        <label>Kadrowanie pionu:</label>
-        <input type="range" id="desc-crop-y" min="0" max="100" value="50">
-        <span id="desc-crop-y-val">środek</span>
+        <label>Pozycjonowanie:</label>
+        <button type="button" id="desc-reset-pos" class="btn-secondary" style="font-size:.75rem;padding:.3rem .8rem;">Resetuj pozycje</button>
+        <span style="color:#666;font-size:.72rem;margin-left:.5rem">Przeciągnij zdjęcie · Scroll = zoom</span>
       </div>
     </div>
 
@@ -700,8 +702,7 @@ $('bg-color').addEventListener('change', settingsChanged);
 /* ── Transformacja (obrót + odbicie) ── */
 /* Stan: rotation 0/90/180/270, flipH, flipV — osobno dla desc i product */
 const transforms = { desc: { rot: 0, flipH: false, flipV: false }, product: { rot: 0, flipH: false, flipV: false } };
-let descCropY = 0.5;
-let imageCropY = new Map();
+let imageViewStates = new Map(); /* i -> { zoom, panX, panY, minZoom, maxZoom } */
 
 function setupTransformBar(barId, mode) {
   const bar = $(barId);
@@ -733,25 +734,11 @@ function setupTransformBar(barId, mode) {
 setupTransformBar('transform-desc', 'desc');
 setupTransformBar('transform-product', 'product');
 
-/* ── Kadrowanie pionu (Opis na stronę) ── */
-const descCropYSlider = $('desc-crop-y');
-const descCropYValEl = $('desc-crop-y-val');
-function descCropYLabel(v) { return v == 0 ? 'góra' : v == 50 ? 'środek' : v == 100 ? 'dół' : v + '%'; }
-descCropYSlider.addEventListener('input', () => {
-  const v = parseInt(descCropYSlider.value);
-  descCropYValEl.textContent = descCropYLabel(v);
-  descCropY = v / 100;
-  imageCropY.clear();
+/* ── Resetuj pozycje (Opis na stronę) ── */
+$('desc-reset-pos').addEventListener('click', () => {
+  imageViewStates.clear();
   if (preview.classList.contains('preview-phase') && loadedImages.length > 0) {
-    preview.querySelectorAll('.thumb').forEach(thumb => {
-      const excess = parseFloat(thumb.dataset.excess || 0);
-      const imgEl = thumb.querySelector('.crop-frame img');
-      if (imgEl && excess > 0) {
-        imgEl.style.transform = `translateY(${Math.round(-excess * descCropY)}px)`;
-      }
-    });
-  } else {
-    settingsChanged();
+    debouncedPreview();
   }
 });
 
@@ -811,7 +798,7 @@ function resetUI() {
   btnConvert.style.display = 'none';
   pendingFiles = null;
   loadedImages = [];
-  imageCropY.clear();
+  imageViewStates.clear();
   clearTimeout(previewTimer);
 }
 
@@ -933,7 +920,7 @@ async function renderProductPreview() {
   }
 }
 
-/* Podgląd canvas dla trybu desc — auto-equalize do minW × minH */
+/* Podgląd canvas dla trybu desc — auto-equalize do min(widths) × min(heights) */
 async function renderDescPreview() {
   const gen = ++previewGeneration;
   const tState = transforms.desc;
@@ -942,10 +929,11 @@ async function renderDescPreview() {
   preview.innerHTML = '';
   status.textContent = 'Generuję podgląd...';
 
-  /* Oblicz docelowe wymiary: minW × minH z naturalnych rozmiarów */
+  const swapped = (tState.rot === 90 || tState.rot === 270);
+
+  /* Oblicz docelowe wymiary: min(szerokości) × min(wysokości) z naturalnych rozmiarów */
   let effectiveW = 0;
   let effectiveH = 0;
-  const swapped = (tState.rot === 90 || tState.rot === 270);
 
   if (loadedImages.length >= 2) {
     const dims = loadedImages.map(({ img }) => {
@@ -953,10 +941,8 @@ async function renderDescPreview() {
       const oh = img.naturalHeight || img.height;
       return { w: swapped ? oh : ow, h: swapped ? ow : oh };
     });
-    const minW = Math.min(...dims.map(d => d.w));
-    const heights = dims.map(d => Math.round(minW * (d.h / d.w)));
-    effectiveW = minW;
-    effectiveH = Math.min(...heights);
+    effectiveW = Math.min(...dims.map(d => d.w));
+    effectiveH = Math.min(...dims.map(d => d.h));
   }
 
   for (let i = 0; i < loadedImages.length; i++) {
@@ -967,70 +953,136 @@ async function renderDescPreview() {
     const srcW = src.naturalWidth || src.width;
     const srcH = src.naturalHeight || src.height;
 
-    let targetW, targetH;
+    let tW, tH;
     if (effectiveW > 0 && effectiveH > 0) {
-      targetW = effectiveW;
-      targetH = effectiveH;
+      tW = effectiveW;
+      tH = effectiveH;
     } else {
-      targetW = srcW;
-      targetH = srcH;
+      tW = srcW;
+      tH = srcH;
     }
 
     /* Skaluj podgląd */
-    const prevScale = Math.min(1, PREV_MAX / Math.max(targetW, targetH));
-    const prevW = Math.max(1, Math.round(targetW * prevScale));
-    const prevH = Math.max(1, Math.round(targetH * prevScale));
+    const prevScale = Math.min(1, PREV_MAX / Math.max(tW, tH));
+    const prevW = Math.max(1, Math.round(tW * prevScale));
+    const prevH = Math.max(1, Math.round(tH * prevScale));
 
-    /* Pełna wysokość po skalowaniu do targetW */
-    const scaledH = Math.round(srcH * (targetW / srcW));
-    const fullPrevH = Math.max(1, Math.round(scaledH * prevScale));
-    const excess = Math.max(0, fullPrevH - prevH);
+    /* Zoom constraints */
+    const minZoom = Math.max(tW / srcW, tH / srcH);
+    const maxZoom = 1.0;
 
+    /* Get or init view state */
+    if (!imageViewStates.has(i)) {
+      imageViewStates.set(i, { zoom: minZoom, panX: 0, panY: 0 });
+    }
+    const vs = imageViewStates.get(i);
+    vs.minZoom = minZoom;
+    vs.maxZoom = maxZoom;
+    vs.zoom = Math.max(minZoom, Math.min(maxZoom, vs.zoom));
+    /* Clamp pan */
+    const mxPanX = Math.max(0, (srcW * vs.zoom - tW) / 2);
+    const mxPanY = Math.max(0, (srcH * vs.zoom - tH) / 2);
+    vs.panX = Math.max(-mxPanX, Math.min(mxPanX, vs.panX));
+    vs.panY = Math.max(-mxPanY, Math.min(mxPanY, vs.panY));
+
+    /* Canvas podglądu — pełny obraz w rozdzielczości podglądowej */
+    const PREVIEW_IMG_MAX = 900;
+    const imgScale = Math.min(1, PREVIEW_IMG_MAX / Math.max(srcW, srcH));
     const c = document.createElement('canvas');
-    c.width = prevW;
-    c.height = fullPrevH;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(src, 0, 0, srcW, srcH, 0, 0, prevW, fullPrevH);
+    c.width = Math.round(srcW * imgScale);
+    c.height = Math.round(srcH * imgScale);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
 
-    const cropY = imageCropY.has(i) ? imageCropY.get(i) : descCropY;
-    const translateY = Math.round(-excess * cropY);
+    /* CSS rozmiar i pozycja obrazu w ramce podglądu */
+    const imgDispW = srcW * vs.zoom * prevScale;
+    const imgDispH = srcH * vs.zoom * prevScale;
+    const imgLeft = (prevW - imgDispW) / 2 + vs.panX * prevScale;
+    const imgTop = (prevH - imgDispH) / 2 + vs.panY * prevScale;
 
-    const changed = (srcW !== targetW || srcH !== targetH);
-    const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${targetW}\u00d7${targetH}` : `${targetW}\u00d7${targetH}`;
+    const changed = (srcW !== tW || srcH !== tH);
+    const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${tW}\u00d7${tH}` : `${tW}\u00d7${tH}`;
+
+    const canInteract = (minZoom + 0.001 < maxZoom) || (srcW * minZoom > tW + 0.5) || (srcH * minZoom > tH + 0.5);
+
     const d = document.createElement('div');
     d.className = 'thumb';
     d.dataset.idx = i;
-    d.dataset.excess = excess;
-    d.innerHTML = `<div class="crop-frame${excess > 0 ? ' draggable' : ''}" style="height:${prevH}px"><img src="${c.toDataURL('image/png')}" style="transform:translateY(${translateY}px)" draggable="false"></div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
+    d.innerHTML = `<div class="crop-frame${canInteract ? '' : ' no-interact'}" style="width:${prevW}px;height:${prevH}px"><img src="${c.toDataURL('image/jpeg', 0.85)}" style="width:${imgDispW.toFixed(1)}px;height:${imgDispH.toFixed(1)}px;left:${imgLeft.toFixed(1)}px;top:${imgTop.toFixed(1)}px" draggable="false"></div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
     preview.appendChild(d);
-    if (excess > 0) {
-      const imgEl = d.querySelector('.crop-frame img');
-      imgEl.addEventListener('pointerdown', (e) => {
+
+    /* Interakcja: drag do panoramy + scroll do zoomu */
+    if (canInteract) {
+      const frame = d.querySelector('.crop-frame');
+      const imgEl = frame.querySelector('img');
+
+      /* ── Drag (pan 2D) ── */
+      frame.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        imgEl.setPointerCapture(e.pointerId);
-        const startY = e.clientY;
-        const startCropY = imageCropY.has(i) ? imageCropY.get(i) : descCropY;
+        frame.setPointerCapture(e.pointerId);
+        frame.classList.add('grabbing');
+        const startX = e.clientX, startY = e.clientY;
+        const startPanX = vs.panX, startPanY = vs.panY;
+
         const onMove = (e2) => {
-          const dy = e2.clientY - startY;
-          const newCropY = Math.max(0, Math.min(1, startCropY - dy / excess));
-          imageCropY.set(i, newCropY);
-          imgEl.style.transform = `translateY(${Math.round(-excess * newCropY)}px)`;
+          const dx = (e2.clientX - startX) / prevScale;
+          const dy = (e2.clientY - startY) / prevScale;
+          const limX = Math.max(0, (srcW * vs.zoom - tW) / 2);
+          const limY = Math.max(0, (srcH * vs.zoom - tH) / 2);
+          vs.panX = Math.max(-limX, Math.min(limX, startPanX + dx));
+          vs.panY = Math.max(-limY, Math.min(limY, startPanY + dy));
+          imgEl.style.left = ((prevW - srcW * vs.zoom * prevScale) / 2 + vs.panX * prevScale).toFixed(1) + 'px';
+          imgEl.style.top = ((prevH - srcH * vs.zoom * prevScale) / 2 + vs.panY * prevScale).toFixed(1) + 'px';
         };
         const onUp = () => {
-          imgEl.removeEventListener('pointermove', onMove);
-          imgEl.removeEventListener('pointerup', onUp);
+          frame.classList.remove('grabbing');
+          frame.removeEventListener('pointermove', onMove);
+          frame.removeEventListener('pointerup', onUp);
         };
-        imgEl.addEventListener('pointermove', onMove);
-        imgEl.addEventListener('pointerup', onUp);
+        frame.addEventListener('pointermove', onMove);
+        frame.addEventListener('pointerup', onUp);
       });
+
+      /* ── Scroll (zoom) ── */
+      frame.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newZoom = Math.max(vs.minZoom, Math.min(vs.maxZoom, vs.zoom * factor));
+        if (Math.abs(newZoom - vs.zoom) < 0.0001) return;
+
+        /* Zoom w kierunku kursora */
+        const rect = frame.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / prevScale;
+        const my = (e.clientY - rect.top) / prevScale;
+        const imgMx = (mx - tW / 2 - vs.panX) / vs.zoom;
+        const imgMy = (my - tH / 2 - vs.panY) / vs.zoom;
+
+        vs.zoom = newZoom;
+        vs.panX = mx - tW / 2 - imgMx * newZoom;
+        vs.panY = my - tH / 2 - imgMy * newZoom;
+
+        /* Clamp pan */
+        const limX = Math.max(0, (srcW * vs.zoom - tW) / 2);
+        const limY = Math.max(0, (srcH * vs.zoom - tH) / 2);
+        vs.panX = Math.max(-limX, Math.min(limX, vs.panX));
+        vs.panY = Math.max(-limY, Math.min(limY, vs.panY));
+
+        /* Update CSS */
+        const dW = srcW * vs.zoom * prevScale;
+        const dH = srcH * vs.zoom * prevScale;
+        imgEl.style.width = dW.toFixed(1) + 'px';
+        imgEl.style.height = dH.toFixed(1) + 'px';
+        imgEl.style.left = ((prevW - dW) / 2 + vs.panX * prevScale).toFixed(1) + 'px';
+        imgEl.style.top = ((prevH - dH) / 2 + vs.panY * prevScale).toFixed(1) + 'px';
+      }, { passive: false });
     }
+
     await tick();
   }
 
   btnConvert.style.display = 'block';
   if (gen === previewGeneration) {
     if (effectiveW > 0) {
-      status.textContent = `${loadedImages.length} plików — wyrównano do ${effectiveW}\u00d7${effectiveH} — kliknij Konwertuj`;
+      status.textContent = `${loadedImages.length} plików — kadr ${effectiveW}\u00d7${effectiveH} — kliknij Konwertuj`;
     } else {
       status.textContent = '1 plik — kliknij Konwertuj';
     }
@@ -1120,7 +1172,7 @@ async function handleDesc(files) {
   /* Jedno zdjęcie — konwertuj bez zmian */
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY, descCropY);
+    const blob = await descConvertOne(loaded[0], 0, 0, QUALITY, null);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1128,20 +1180,19 @@ async function handleDesc(files) {
     return;
   }
 
-  /* Wiele zdjęć — wyrównaj do najwęższego × najkrótszego */
+  /* Wiele zdjęć — wyrównaj do min(szerokości) × min(wysokości) */
   const minW = Math.min(...loaded.map(l => l.w));
-  const heights = loaded.map(l => Math.round(minW * (l.h / l.w)));
-  const minH = Math.min(...heights);
+  const minH = Math.min(...loaded.map(l => l.h));
 
   status.textContent = `Wyrównuję do ${minW}\u00d7${minH}px...`;
-  const cropYs = loaded.map((_, i) => imageCropY.has(i) ? imageCropY.get(i) : descCropY);
-  await processDescBatch(loaded, minW, minH, QUALITY, cropYs);
+  const viewStates = loaded.map((_, i) => imageViewStates.has(i) ? imageViewStates.get(i) : null);
+  await processDescBatch(loaded, minW, minH, QUALITY, viewStates);
 }
 
-async function processDescBatch(loaded, targetW, targetH, quality, cropYs) {
+async function processDescBatch(loaded, targetW, targetH, quality, viewStates) {
   if (loaded.length === 1) {
     status.textContent = 'Konwertuję...';
-    const blob = await descConvertOne(loaded[0], targetW, targetH, quality, cropYs[0]);
+    const blob = await descConvertOne(loaded[0], targetW, targetH, quality, viewStates[0]);
     download(blob, swapExt(loaded[0].file.name));
     showThumb(URL.createObjectURL(blob), swapExt(loaded[0].file.name), blob.size);
     addToCounter();
@@ -1149,11 +1200,11 @@ async function processDescBatch(loaded, targetW, targetH, quality, cropYs) {
     return;
   }
   await zipConvert(loaded.map(l => l.file), async (file, i) => {
-    return descConvertOne(loaded[i], targetW, targetH, quality, cropYs[i]);
+    return descConvertOne(loaded[i], targetW, targetH, quality, viewStates[i]);
   });
 }
 
-async function descConvertOne(item, targetW, targetH, quality, cropY) {
+async function descConvertOne(item, targetW, targetH, quality, viewState) {
   const { img, w, h } = item;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -1161,11 +1212,20 @@ async function descConvertOne(item, targetW, targetH, quality, cropY) {
   if (targetW > 0 && targetH > 0) {
     canvas.width = targetW;
     canvas.height = targetH;
-    /* Skaluj do targetW, kadruj w pionie wg cropY */
-    const scaledH = h * (targetW / w);
-    const excess = scaledH - targetH;
-    const offsetY = -excess * (cropY != null ? cropY : 0.5);
-    ctx.drawImage(img, 0, 0, w, h, 0, offsetY, targetW, scaledH);
+
+    /* Oblicz zoom i pan — domyślnie minZoom wycentrowany */
+    const defZoom = Math.max(targetW / w, targetH / h);
+    const zoom = viewState ? viewState.zoom : defZoom;
+    const panX = viewState ? viewState.panX : 0;
+    const panY = viewState ? viewState.panY : 0;
+
+    /* Source rect w pikselach oryginalnego obrazu */
+    const sx = w / 2 - (targetW / 2 + panX) / zoom;
+    const sy = h / 2 - (targetH / 2 + panY) / zoom;
+    const sw = targetW / zoom;
+    const sh = targetH / zoom;
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
   } else {
     canvas.width = w;
     canvas.height = h;
