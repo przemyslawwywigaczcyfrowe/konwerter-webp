@@ -431,7 +431,7 @@ h1 {
 }
 /* Desc crop mode — duże podglądy, mniej kolumn */
 #preview.desc-crop-mode {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 #preview.desc-crop-mode .thumb .crop-container img {
@@ -944,7 +944,7 @@ async function renderProductPreview() {
 async function renderDescPreview() {
   const gen = ++previewGeneration;
   const tState = transforms.desc;
-  const PREV_MAX = 500;
+  const PREV_MAX = 350;
 
   preview.innerHTML = '';
   preview.classList.add('desc-crop-mode');
