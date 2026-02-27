@@ -230,8 +230,8 @@ h1 {
   background: #2a2a2a;
   margin: 0 .15rem;
 }
-/* Per-image crop frame — pan+zoom */
-.crop-frame {
+/* Per-image crop container — full image with overlay */
+.crop-container {
   position: relative;
   overflow: hidden;
   border-radius: 6px;
@@ -239,17 +239,26 @@ h1 {
   cursor: grab;
   background: #111;
 }
-.crop-frame.grabbing {
+.crop-container.grabbing {
   cursor: grabbing;
 }
-.crop-frame.no-interact {
+.crop-container.no-interact {
   cursor: default;
 }
-.crop-frame img {
-  position: absolute;
+.crop-container img {
+  display: block;
+  width: 100%;
+  height: 100%;
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
+}
+.crop-rect {
+  position: absolute;
+  border: 2px dashed rgba(255,255,255,.6);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.55);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ── Dialog (proporcje / wymiary) ── */
@@ -920,18 +929,18 @@ async function renderProductPreview() {
   }
 }
 
-/* Podgląd canvas dla trybu desc — auto-equalize do min(widths) × min(heights) */
+/* Podgląd: pełny obraz + ramka kadrowania (crop-rect overlay) */
 async function renderDescPreview() {
   const gen = ++previewGeneration;
   const tState = transforms.desc;
-  const PREV_MAX = 300;
+  const PREV_MAX = 350;
 
   preview.innerHTML = '';
   status.textContent = 'Generuję podgląd...';
 
   const swapped = (tState.rot === 90 || tState.rot === 270);
 
-  /* Oblicz docelowe wymiary: min(szerokości) × min(wysokości) z naturalnych rozmiarów */
+  /* Oblicz docelowe wymiary: min(szerokości) × min(wysokości) */
   let effectiveW = 0;
   let effectiveH = 0;
 
@@ -962,30 +971,43 @@ async function renderDescPreview() {
       tH = srcH;
     }
 
-    /* Skaluj podgląd */
-    const prevScale = Math.min(1, PREV_MAX / Math.max(tW, tH));
-    const prevW = Math.max(1, Math.round(tW * prevScale));
-    const prevH = Math.max(1, Math.round(tH * prevScale));
+    /* Preview: skaluj CAŁY obraz do max PREV_MAX */
+    const prevScale = Math.min(1, PREV_MAX / Math.max(srcW, srcH));
+    const imgPrevW = Math.max(1, Math.round(srcW * prevScale));
+    const imgPrevH = Math.max(1, Math.round(srcH * prevScale));
 
-    /* Zoom constraints */
-    const minZoom = Math.max(tW / srcW, tH / srcH);
-    const maxZoom = 1.0;
+    /* Proporcje kadrowania */
+    const cRatio = tW / tH;
 
-    /* Get or init view state */
+    /* Zakres ramki crop w pikselach oryginału:
+       max = największy prostokąt cRatio mieszczący się w obrazie
+       min = tW × tH (1:1 piksel, bez skalowania w górę) */
+    let maxCropW, maxCropH;
+    if (srcW / srcH > cRatio) {
+      maxCropH = srcH; maxCropW = srcH * cRatio;
+    } else {
+      maxCropW = srcW; maxCropH = srcW / cRatio;
+    }
+    const minCropW = tW;
+    const minCropH = tH;
+
+    /* Inicjalizuj lub przywróć stan kadrowania */
     if (!imageViewStates.has(i)) {
-      imageViewStates.set(i, { zoom: minZoom, panX: 0, panY: 0 });
+      imageViewStates.set(i, {
+        cropW: maxCropW, cropH: maxCropH,
+        cropX: (srcW - maxCropW) / 2, cropY: (srcH - maxCropH) / 2
+      });
     }
     const vs = imageViewStates.get(i);
-    vs.minZoom = minZoom;
-    vs.maxZoom = maxZoom;
-    vs.zoom = Math.max(minZoom, Math.min(maxZoom, vs.zoom));
-    /* Clamp pan */
-    const mxPanX = Math.max(0, (srcW * vs.zoom - tW) / 2);
-    const mxPanY = Math.max(0, (srcH * vs.zoom - tH) / 2);
-    vs.panX = Math.max(-mxPanX, Math.min(mxPanX, vs.panX));
-    vs.panY = Math.max(-mxPanY, Math.min(mxPanY, vs.panY));
+    vs.maxCropW = maxCropW; vs.maxCropH = maxCropH;
+    vs.minCropW = minCropW; vs.minCropH = minCropH;
+    /* Clamp */
+    vs.cropW = Math.max(minCropW, Math.min(maxCropW, vs.cropW));
+    vs.cropH = vs.cropW / cRatio;
+    vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, vs.cropX));
+    vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, vs.cropY));
 
-    /* Canvas podglądu — pełny obraz w rozdzielczości podglądowej */
+    /* Canvas podglądu */
     const PREVIEW_IMG_MAX = 900;
     const imgScale = Math.min(1, PREVIEW_IMG_MAX / Math.max(srcW, srcH));
     const c = document.createElement('canvas');
@@ -993,86 +1015,81 @@ async function renderDescPreview() {
     c.height = Math.round(srcH * imgScale);
     c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
 
-    /* CSS rozmiar i pozycja obrazu w ramce podglądu */
-    const imgDispW = srcW * vs.zoom * prevScale;
-    const imgDispH = srcH * vs.zoom * prevScale;
-    const imgLeft = (prevW - imgDispW) / 2 + vs.panX * prevScale;
-    const imgTop = (prevH - imgDispH) / 2 + vs.panY * prevScale;
+    /* Pozycja ramki crop w px podglądu */
+    const rcL = Math.round(vs.cropX * prevScale);
+    const rcT = Math.round(vs.cropY * prevScale);
+    const rcW = Math.round(vs.cropW * prevScale);
+    const rcH = Math.round(vs.cropH * prevScale);
 
     const changed = (srcW !== tW || srcH !== tH);
     const dimsText = changed ? `${srcW}\u00d7${srcH} \u2192 ${tW}\u00d7${tH}` : `${tW}\u00d7${tH}`;
-
-    const canInteract = (minZoom + 0.001 < maxZoom) || (srcW * minZoom > tW + 0.5) || (srcH * minZoom > tH + 0.5);
+    const canInteract = (maxCropW - minCropW > 1) || (srcW - vs.cropW > 1) || (srcH - vs.cropH > 1);
 
     const d = document.createElement('div');
     d.className = 'thumb';
     d.dataset.idx = i;
-    d.innerHTML = `<div class="crop-frame${canInteract ? '' : ' no-interact'}" style="width:${prevW}px;height:${prevH}px"><img src="${c.toDataURL('image/jpeg', 0.85)}" style="width:${imgDispW.toFixed(1)}px;height:${imgDispH.toFixed(1)}px;left:${imgLeft.toFixed(1)}px;top:${imgTop.toFixed(1)}px" draggable="false"></div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
+    d.innerHTML = `<div class="crop-container${canInteract ? '' : ' no-interact'}" style="width:${imgPrevW}px;height:${imgPrevH}px"><img src="${c.toDataURL('image/jpeg', 0.85)}" draggable="false">${canInteract ? `<div class="crop-rect" style="left:${rcL}px;top:${rcT}px;width:${rcW}px;height:${rcH}px"></div>` : ''}</div><div class="info"><div class="name">${esc(file.name)}</div><div class="dims">${dimsText}</div></div>`;
     preview.appendChild(d);
 
-    /* Interakcja: drag do panoramy + scroll do zoomu */
+    /* Interakcja: drag = przesuń ramkę, scroll = zmień rozmiar ramki */
     if (canInteract) {
-      const frame = d.querySelector('.crop-frame');
-      const imgEl = frame.querySelector('img');
+      const container = d.querySelector('.crop-container');
+      const rectEl = container.querySelector('.crop-rect');
 
-      /* ── Drag (pan 2D) ── */
-      frame.addEventListener('pointerdown', (e) => {
+      /* ── Drag — przesuń ramkę kadrowania ── */
+      container.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        frame.setPointerCapture(e.pointerId);
-        frame.classList.add('grabbing');
+        container.setPointerCapture(e.pointerId);
+        container.classList.add('grabbing');
         const startX = e.clientX, startY = e.clientY;
-        const startPanX = vs.panX, startPanY = vs.panY;
+        const startCX = vs.cropX, startCY = vs.cropY;
 
         const onMove = (e2) => {
           const dx = (e2.clientX - startX) / prevScale;
           const dy = (e2.clientY - startY) / prevScale;
-          const limX = Math.max(0, (srcW * vs.zoom - tW) / 2);
-          const limY = Math.max(0, (srcH * vs.zoom - tH) / 2);
-          vs.panX = Math.max(-limX, Math.min(limX, startPanX + dx));
-          vs.panY = Math.max(-limY, Math.min(limY, startPanY + dy));
-          imgEl.style.left = ((prevW - srcW * vs.zoom * prevScale) / 2 + vs.panX * prevScale).toFixed(1) + 'px';
-          imgEl.style.top = ((prevH - srcH * vs.zoom * prevScale) / 2 + vs.panY * prevScale).toFixed(1) + 'px';
+          vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, startCX + dx));
+          vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, startCY + dy));
+          rectEl.style.left = Math.round(vs.cropX * prevScale) + 'px';
+          rectEl.style.top = Math.round(vs.cropY * prevScale) + 'px';
         };
         const onUp = () => {
-          frame.classList.remove('grabbing');
-          frame.removeEventListener('pointermove', onMove);
-          frame.removeEventListener('pointerup', onUp);
+          container.classList.remove('grabbing');
+          container.removeEventListener('pointermove', onMove);
+          container.removeEventListener('pointerup', onUp);
         };
-        frame.addEventListener('pointermove', onMove);
-        frame.addEventListener('pointerup', onUp);
+        container.addEventListener('pointermove', onMove);
+        container.addEventListener('pointerup', onUp);
       });
 
-      /* ── Scroll (zoom) ── */
-      frame.addEventListener('wheel', (e) => {
+      /* ── Scroll — zmień rozmiar ramki (zoom) ── */
+      container.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const factor = e.deltaY < 0 ? 1.12 : 0.89;
-        const newZoom = Math.max(vs.minZoom, Math.min(vs.maxZoom, vs.zoom * factor));
-        if (Math.abs(newZoom - vs.zoom) < 0.0001) return;
+        /* scroll down = ramka większa (oddal), scroll up = ramka mniejsza (przybliż) */
+        const factor = e.deltaY > 0 ? 1.1 : 0.9;
+        const newCropW = Math.max(vs.minCropW, Math.min(vs.maxCropW, vs.cropW * factor));
+        const newCropH = newCropW / cRatio;
+        if (Math.abs(newCropW - vs.cropW) < 0.5) return;
 
-        /* Zoom w kierunku kursora */
-        const rect = frame.getBoundingClientRect();
+        /* Zoom w kierunku kursora — zachowaj punkt pod kursorem */
+        const rect = container.getBoundingClientRect();
         const mx = (e.clientX - rect.left) / prevScale;
         const my = (e.clientY - rect.top) / prevScale;
-        const imgMx = (mx - tW / 2 - vs.panX) / vs.zoom;
-        const imgMy = (my - tH / 2 - vs.panY) / vs.zoom;
+        const rx = (mx - vs.cropX) / vs.cropW;
+        const ry = (my - vs.cropY) / vs.cropH;
 
-        vs.zoom = newZoom;
-        vs.panX = mx - tW / 2 - imgMx * newZoom;
-        vs.panY = my - tH / 2 - imgMy * newZoom;
+        vs.cropW = newCropW;
+        vs.cropH = newCropH;
+        vs.cropX = mx - rx * vs.cropW;
+        vs.cropY = my - ry * vs.cropH;
 
-        /* Clamp pan */
-        const limX = Math.max(0, (srcW * vs.zoom - tW) / 2);
-        const limY = Math.max(0, (srcH * vs.zoom - tH) / 2);
-        vs.panX = Math.max(-limX, Math.min(limX, vs.panX));
-        vs.panY = Math.max(-limY, Math.min(limY, vs.panY));
+        /* Clamp */
+        vs.cropX = Math.max(0, Math.min(srcW - vs.cropW, vs.cropX));
+        vs.cropY = Math.max(0, Math.min(srcH - vs.cropH, vs.cropY));
 
-        /* Update CSS */
-        const dW = srcW * vs.zoom * prevScale;
-        const dH = srcH * vs.zoom * prevScale;
-        imgEl.style.width = dW.toFixed(1) + 'px';
-        imgEl.style.height = dH.toFixed(1) + 'px';
-        imgEl.style.left = ((prevW - dW) / 2 + vs.panX * prevScale).toFixed(1) + 'px';
-        imgEl.style.top = ((prevH - dH) / 2 + vs.panY * prevScale).toFixed(1) + 'px';
+        rectEl.style.left = Math.round(vs.cropX * prevScale) + 'px';
+        rectEl.style.top = Math.round(vs.cropY * prevScale) + 'px';
+        rectEl.style.width = Math.round(vs.cropW * prevScale) + 'px';
+        rectEl.style.height = Math.round(vs.cropH * prevScale) + 'px';
       }, { passive: false });
     }
 
@@ -1209,23 +1226,22 @@ async function descConvertOne(item, targetW, targetH, quality, viewState) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
-  if (targetW > 0 && targetH > 0) {
+  if (targetW > 0 && targetH > 0 && viewState) {
     canvas.width = targetW;
     canvas.height = targetH;
-
-    /* Oblicz zoom i pan — domyślnie minZoom wycentrowany */
-    const defZoom = Math.max(targetW / w, targetH / h);
-    const zoom = viewState ? viewState.zoom : defZoom;
-    const panX = viewState ? viewState.panX : 0;
-    const panY = viewState ? viewState.panY : 0;
-
-    /* Source rect w pikselach oryginalnego obrazu */
-    const sx = w / 2 - (targetW / 2 + panX) / zoom;
-    const sy = h / 2 - (targetH / 2 + panY) / zoom;
-    const sw = targetW / zoom;
-    const sh = targetH / zoom;
-
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+    /* Rysuj fragment obrazu zdefiniowany przez ramkę crop */
+    ctx.drawImage(img,
+      viewState.cropX, viewState.cropY, viewState.cropW, viewState.cropH,
+      0, 0, targetW, targetH);
+  } else if (targetW > 0 && targetH > 0) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+    /* Domyślnie: wycentrowany max crop */
+    const cRatio = targetW / targetH;
+    let cw, ch;
+    if (w / h > cRatio) { ch = h; cw = h * cRatio; }
+    else { cw = w; ch = w / cRatio; }
+    ctx.drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, targetW, targetH);
   } else {
     canvas.width = w;
     canvas.height = h;
