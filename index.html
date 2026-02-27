@@ -256,7 +256,7 @@ h1 {
 .crop-rect {
   position: absolute;
   border: 2px dashed rgba(255,255,255,.6);
-  box-shadow: 0 0 0 9999px rgba(0,0,0,.55);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.35);
   pointer-events: none;
   z-index: 1;
 }
@@ -428,6 +428,17 @@ h1 {
 }
 #preview.preview-phase .thumb img {
   transition: transform .2s ease;
+}
+/* Desc crop mode — duże podglądy, mniej kolumn */
+#preview.desc-crop-mode {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+#preview.desc-crop-mode .thumb .crop-container img {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  margin-bottom: 0;
 }
 
 /* ── Licznik ── */
@@ -802,7 +813,7 @@ fileInput.addEventListener('change', () => {
 function resetUI() {
   status.textContent = '';
   preview.innerHTML = '';
-  preview.classList.remove('preview-phase');
+  preview.classList.remove('preview-phase', 'desc-crop-mode');
   dimDialog.style.display = 'none';
   btnConvert.style.display = 'none';
   pendingFiles = null;
@@ -933,9 +944,10 @@ async function renderProductPreview() {
 async function renderDescPreview() {
   const gen = ++previewGeneration;
   const tState = transforms.desc;
-  const PREV_MAX = 350;
+  const PREV_MAX = 500;
 
   preview.innerHTML = '';
+  preview.classList.add('desc-crop-mode');
   status.textContent = 'Generuję podgląd...';
 
   const swapped = (tState.rot === 90 || tState.rot === 270);
