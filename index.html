@@ -1510,7 +1510,7 @@ async function getContentBounds(img, threshold) {
     for (let y = yStart; y < yEnd; y++) {
       for (let x = 0; x < aW; x++) {
         const i = (y * aW + x) * 4;
-        if (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold) {
+        if (d[i+3] > 10 && (d[i] < threshold || d[i+1] < threshold || d[i+2] < threshold)) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
@@ -1683,11 +1683,13 @@ function loadImg(file) {
       URL.revokeObjectURL(url);
       reject(new Error('Timeout wczytywania: ' + file.name));
     }, 15000);
-    img.onload = () => {
+    img.onload = async () => {
       clearTimeout(timeout);
+      try {
+        await img.decode();
+      } catch { /* starsze przeglądarki — ignoruj */ }
       resolve(img);
-      /* revoke po krótkim opóźnieniu — dajemy czas na drawImage */
-      setTimeout(() => URL.revokeObjectURL(url), 500);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
     };
     img.onerror = () => {
       clearTimeout(timeout);
@@ -1700,7 +1702,12 @@ function loadImg(file) {
 
 function canvasToBlob(canvas, quality) {
   return new Promise((resolve, reject) => {
-    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Konwersja nie powiodła się')), 'image/webp', quality);
+    canvas.toBlob(b => {
+      if (b) return resolve(b);
+      setTimeout(() => {
+        canvas.toBlob(b2 => b2 ? resolve(b2) : reject(new Error('Konwersja nie powiodła się')), 'image/webp', quality);
+      }, 50);
+    }, 'image/webp', quality);
   });
 }
 
